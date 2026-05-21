@@ -64,8 +64,13 @@ class DrawRepository(
             connectivityManager.registerNetworkCallback(networkRequest, object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     _isInternetAvailable.value = true
-                    currentInviteCode?.let {
-                        connectToRoom(it)
+                    // Only reconnect if we are actually disconnected.
+                    // Don't tear down a healthy connection just because Android
+                    // re-reported network availability.
+                    if (_connectionState.value == WebSocketConnectionState.DISCONNECTED) {
+                        currentInviteCode?.let {
+                            connectToRoom(it)
+                        }
                     }
                 }
 
@@ -91,6 +96,11 @@ class DrawRepository(
     }
 
     fun connectToRoom(inviteCode: String) {
+        // Skip if already connected to this exact room
+        if (inviteCode == currentInviteCode
+            && _connectionState.value == WebSocketConnectionState.CONNECTED) {
+            return
+        }
         currentInviteCode = inviteCode
         activeWebSocket?.close(1000, "Switching room")
         _connectionState.value = WebSocketConnectionState.CONNECTING
@@ -100,7 +110,7 @@ class DrawRepository(
         // to platform-specific reporting issues on some Android ROMs/vendors.
 
         // We use the globally trusted public testing sandbox key from PieSocket
-        val url = "wss://free.piesocket.com/v3/$inviteCode?api_key=VCbSZaNdaNrnAt66LDQu9M4tZ26PtoE0eR78vQO6"
+        val url = "wss://free.piesocket.com/v3/$inviteCode?api_key=KYV0abIzOsY35Fa7HXXByTdbV9LBgJnPAYflftqt"
         val request = Request.Builder().url(url).build()
 
         activeWebSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
