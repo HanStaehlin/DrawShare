@@ -12,6 +12,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.Date
 import kotlinx.coroutines.launch
 import okhttp3.*
 import org.json.JSONObject
@@ -34,6 +37,18 @@ class DrawRepository(
 
     private val _connectionState = MutableStateFlow(WebSocketConnectionState.DISCONNECTED)
     val connectionState: StateFlow<WebSocketConnectionState> = _connectionState
+
+    private val _debugLog = MutableStateFlow<List<String>>(emptyList())
+    val debugLog: StateFlow<List<String>> = _debugLog
+
+    private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
+    private fun addLog(message: String) {
+        val timestamp = timeFormat.format(Date())
+        val entry = "[$timestamp] $message"
+        Log.d("DrawRepository", entry)
+        _debugLog.value = (_debugLog.value + entry).takeLast(50)
+    }
 
     private var activeWebSocket: WebSocket? = null
     private val okHttpClient = OkHttpClient.Builder().build()
@@ -68,14 +83,17 @@ class DrawRepository(
                     // Don't tear down a healthy connection just because Android
                     // re-reported network availability.
                     if (_connectionState.value == WebSocketConnectionState.DISCONNECTED) {
+                        addLog("Network available → auto-reconnecting")
                         currentInviteCode?.let {
                             connectToRoom(it)
                         }
+                    } else {
+                        addLog("Network available (already ${_connectionState.value}, skipping reconnect)")
                     }
                 }
 
                 override fun onLost(network: Network) {
-                    Log.d("DrawRepository", "Network reported lost. Keeping active try.")
+                    addLog("Network reported lost")
                 }
             })
         } catch (e: Exception) {
@@ -89,7 +107,7 @@ class DrawRepository(
         reconnectJob = scope.launch {
             kotlinx.coroutines.delay(3000)
             if (currentInviteCode == inviteCode && _connectionState.value != WebSocketConnectionState.CONNECTED) {
-                Log.d("DrawRepository", "Attempting automatic reconnection for room: $inviteCode")
+                addLog("Auto-reconnect triggered for room: $inviteCode")
                 connectToRoom(inviteCode)
             }
         }
@@ -99,8 +117,10 @@ class DrawRepository(
         // Skip if already connected to this exact room
         if (inviteCode == currentInviteCode
             && _connectionState.value == WebSocketConnectionState.CONNECTED) {
+            addLog("connectToRoom skipped (already connected to $inviteCode)")
             return
         }
+        addLog("Connecting to room: $inviteCode")
         currentInviteCode = inviteCode
         activeWebSocket?.close(1000, "Switching room")
         _connectionState.value = WebSocketConnectionState.CONNECTING
@@ -116,7 +136,7 @@ class DrawRepository(
         activeWebSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 _connectionState.value = WebSocketConnectionState.CONNECTED
-                Log.d("DrawRepository", "WebSocket connection opened in room: $inviteCode")
+                addLog("✅ WebSocket CONNECTED to room: $inviteCode")
                 reconnectJob?.cancel()
             }
 
@@ -125,12 +145,13 @@ class DrawRepository(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                addLog("WebSocket closing (code=$code, reason=$reason)")
                 _connectionState.value = WebSocketConnectionState.DISCONNECTED
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("DrawRepository", "WebSocket Failure: ${t.message}")
+                addLog("❌ WebSocket FAILURE: ${t.message}")
                 _connectionState.value = WebSocketConnectionState.DISCONNECTED
                 scheduleReconnect()
             }

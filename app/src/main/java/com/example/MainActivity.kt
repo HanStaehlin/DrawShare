@@ -305,6 +305,7 @@ fun ActiveBoardScreen(
     val selectedColor by viewModel.selectedColor.collectAsStateWithLifecycle()
     val selectedAlpha by viewModel.selectedAlpha.collectAsStateWithLifecycle()
     val selectedWidth by viewModel.selectedWidth.collectAsStateWithLifecycle()
+    val debugLog by viewModel.debugLog.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -835,7 +836,59 @@ fun ActiveBoardScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.weight(1f))
+                        // Debug Log Panel
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "DEBUG LOG",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Gray,
+                                fontFamily = FontFamily.Monospace
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFF9F9FB))
+                                    .border(1.dp, Color(0xFFF4F4F5), RoundedCornerShape(12.dp))
+                                    .padding(10.dp)
+                            ) {
+                                if (debugLog.isEmpty()) {
+                                    Text(
+                                        text = "No events yet...",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFD4D4D8),
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        reverseLayout = true
+                                    ) {
+                                        items(debugLog.reversed()) { entry ->
+                                            val textColor = when {
+                                                entry.contains("\u2705") -> Color(0xFF22C55E)
+                                                entry.contains("\u274C") -> Color(0xFFEF4444)
+                                                entry.contains("FAILURE") -> Color(0xFFEF4444)
+                                                else -> Color.DarkGray
+                                            }
+                                            Text(
+                                                text = entry,
+                                                fontSize = 10.sp,
+                                                lineHeight = 14.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = textColor,
+                                                modifier = Modifier.padding(vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         // High contrast Danger Zone disconnect link
                         Button(

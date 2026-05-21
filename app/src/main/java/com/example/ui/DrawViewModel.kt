@@ -16,6 +16,7 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
 
     val isInternetAvailable: StateFlow<Boolean> = repository.isInternetAvailable
     val connectionState: StateFlow<WebSocketConnectionState> = repository.connectionState
+    val debugLog: StateFlow<List<String>> = repository.debugLog
 
     private val _inviteCode = MutableStateFlow<String?>(null)
     val inviteCode: StateFlow<String?> = _inviteCode
