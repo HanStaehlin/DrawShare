@@ -1,0 +1,6 @@
+{
+  "name": "DrawShare",
+  "description": "Minimalist, real-time black & white cute drawings sharing app with connection verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

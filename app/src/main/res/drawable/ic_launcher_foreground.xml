@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Solid clean black heart representing "cute drawings love" -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,33 C45,18 21,18 21,46 C21,68 45,84 54,92 C63,84 87,68 87,46 C87,18 63,18 54,33 Z" />
+    
+    <!-- White interior sketch lines for a cute smiling face -->
+    <!-- Left Eye -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,48 C40.5,48 39,49.5 39,51 C39,52.5 40.5,54 42,54 C43.5,54 45,52.5 45,51 C45,49.5 43.5,48 42,48 Z" />
+    <!-- Right Eye -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,48 C64.5,48 63,49.5 63,51 C63,52.5 64.5,54 66,54 C67.5,54 69,52.5 69,51 C69,49.5 67.5,48 66,48 Z" />
+    <!-- Cute Smile curve -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M48,60 C51,63 57,63 60,60" />
+</vector>
