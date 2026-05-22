@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -19,15 +20,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,7 +66,7 @@ class MainActivity : ComponentActivity() {
                     surface = Color.White,
                     primary = Color.Black,
                     onBackground = Color.Black,
-                    onSurface = Color.Black
+                    onSurface = Color.Black,
                 )
             ) {
                 Surface(
@@ -129,7 +126,7 @@ fun DrawShareApp(viewModel: DrawViewModel) {
                             .size(6.dp)
                             .clip(CircleShape)
                             .background(
-                                if (isInternetAvailable && connectionState == WebSocketConnectionState.CONNECTED) 
+                                if (isInternetAvailable && (connectionState == WebSocketConnectionState.CONNECTED)) 
                                     Color.Black 
                                 else 
                                     Color(0xFFD4D4D8)
@@ -152,8 +149,7 @@ fun DrawShareApp(viewModel: DrawViewModel) {
             // Screen Selection flow (Join screen or Active Session tabs)
             if (inviteCode == null) {
                 ConnectionScreen(
-                    viewModel = viewModel,
-                    isInternetAvailable = isInternetAvailable
+                    viewModel = viewModel
                 )
             } else {
                 ActiveBoardScreen(
@@ -168,10 +164,10 @@ fun DrawShareApp(viewModel: DrawViewModel) {
 
 @Composable
 fun ConnectionScreen(
-    viewModel: DrawViewModel,
-    isInternetAvailable: Boolean
+    viewModel: DrawViewModel
 ) {
     var codeInput by remember { mutableStateOf("") }
+    val userName by viewModel.userName.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -180,6 +176,31 @@ fun ConnectionScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Text(
+            text = "YOUR PROFILE",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.sp,
+            color = Color.Black,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        TextField(
+            value = userName,
+            onValueChange = { viewModel.setUserName(it) },
+            placeholder = { Text("Enter your name") },
+            singleLine = true,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color(0xFFF9F9FB),
+                unfocusedContainerColor = Color(0xFFF9F9FB),
+                focusedIndicatorColor = Color.Black
+            ),
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+                .padding(bottom = 32.dp)
+        )
+
         Text(
             text = "CONNECT TO A PARTNER",
             fontSize = 16.sp,
@@ -299,7 +320,7 @@ fun ActiveBoardScreen(
 ) {
     // 3 Tabs matching the bottom navigation of design theme:
     // Tab 0 = History Log, Tab 1 = Active Drawing Canvas, Tab 2 = Group Room Info
-    var activeTab by remember { mutableStateOf(1) }
+    var activeTab by remember { mutableIntStateOf(1) }
 
     val roomMessages by viewModel.roomMessages.collectAsStateWithLifecycle()
     val selectedColor by viewModel.selectedColor.collectAsStateWithLifecycle()
@@ -310,29 +331,21 @@ fun ActiveBoardScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = 12.dp)
     ) {
         
         // ---------------- SLEEK TOP HEADER ----------------
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 14.dp),
+                .padding(vertical = 8.dp, horizontal = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
                 Text(
-                    text = "CONNECTED PARTNER",
-                    fontSize = 10.sp,
-                    color = Color(0xFFA1A1AA),
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.sp,
-                    fontFamily = FontFamily.SansSerif
-                )
-                Text(
-                    text = "Partner Board",
-                    fontSize = 18.sp,
+                    text = "PARTNER BOARD",
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Light,
                     color = Color.Black,
                     letterSpacing = (-0.5).sp,
@@ -342,7 +355,7 @@ fun ActiveBoardScreen(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 1.dp)
                 ) {
                     val (dotColor, statusText) = when (connectionState) {
                         WebSocketConnectionState.CONNECTED -> Color(0xFF22C55E) to "Connected"
@@ -351,49 +364,26 @@ fun ActiveBoardScreen(
                     }
                     Box(
                         modifier = Modifier
-                            .size(7.dp)
+                            .size(6.dp)
                             .clip(CircleShape)
                             .background(dotColor)
                     )
                     Text(
                         text = statusText,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color.Gray,
                         fontFamily = FontFamily.SansSerif
                     )
-
-                    if (connectionState == WebSocketConnectionState.DISCONNECTED) {
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = "Retry",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black,
-                            textDecoration = TextDecoration.Underline,
-                            modifier = Modifier
-                                .clickable { viewModel.joinRoom(inviteCode) }
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
                 }
             }
 
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "INVITE CODE",
-                    fontSize = 10.sp,
-                    color = Color(0xFFA1A1AA),
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.sp,
-                    fontFamily = FontFamily.SansSerif
-                )
-                Text(
-                    text = inviteCode,
-                    fontSize = 18.sp,
+                    text = "CODE: $inviteCode",
+                    fontSize = 14.sp,
                     fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Normal,
-                    letterSpacing = 1.5.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Color.Black
                 )
             }
@@ -401,7 +391,7 @@ fun ActiveBoardScreen(
 
         // Horizontal partition line
         Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(Color(0xFFF4F4F5)))
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // ---------------- ACTIVE TAB BODY ----------------
         Box(
@@ -513,24 +503,25 @@ fun ActiveBoardScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         // Interaction controls (PX-6 PB-10 Space-y-8 alignment)
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
                         ) {
                             
                             // Colors configuration with anim sliding trigger to avoid screen clutter
-                            var showColors by remember { mutableStateOf(false) }
+                            var showColors by remember { mutableStateOf(value = false) }
                             val colorsList = listOf(
-                                0xFF000000.toInt(), // Pure Black
-                                0xFFFF6B6B.toInt(), // Cute Pastel Pink
-                                0xFF339AF0.toInt(), // Cute Pastel Blue
-                                0xFF51CF66.toInt(), // Mint Green
-                                0xFFFCC419.toInt(), // Pastel Yellow
-                                0xFFFF922B.toInt(), // Peach Orange
-                                0xFFB197FC.toInt()  // Lavender Purple
+                                0xFF000000.toInt(), 0xFF747474.toInt(), 0xFFB1B1B1.toInt(), 0xFFFFFFFF.toInt(),
+                                0xFFFF6B6B.toInt(), 0xFFFA5252.toInt(), 0xFFC92A2A.toInt(),
+                                0xFF339AF0.toInt(), 0xFF1C7ED6.toInt(), 0xFF1864AB.toInt(),
+                                0xFF51CF66.toInt(), 0xFF37B24D.toInt(), 0xFF2B8A3E.toInt(),
+                                0xFFFCC419.toInt(), 0xFFFAB005.toInt(), 0xFFE67700.toInt(),
+                                0xFFFF922B.toInt(), 0xFFFD7E14.toInt(), 0xFFD9480F.toInt(),
+                                0xFFB197FC.toInt(), 0xFF845EF7.toInt(), 0xFF5F3DC4.toInt(),
+                                0xFFF06595.toInt(), 0xFFD6336C.toInt(), 0xFFA61E4D.toInt()
                             )
 
                             Row(
@@ -580,7 +571,7 @@ fun ActiveBoardScreen(
 
                                 AnimatedVisibility(
                                     visible = showColors,
-                                    enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                                    enter = slideInHorizontally { it } + fadeIn(),
                                     exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
                                 ) {
                                     LazyRow(
@@ -603,7 +594,7 @@ fun ActiveBoardScreen(
                                                         viewModel.changeColor(colorArgb)
                                                         showColors = false
                                                     }
-                                                    .testTag("color_${colorArgb}")
+                                                    .testTag("color_$colorArgb")
                                             )
                                         }
                                     }
@@ -738,7 +729,7 @@ fun ActiveBoardScreen(
                                         .testTag("send_drawing_button")
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Send,
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
                                         contentDescription = "Send drawing",
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -795,20 +786,44 @@ fun ActiveBoardScreen(
                                     color = Color.Black
                                 )
 
-                                Text(
-                                    text = "COPY CODE",
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    textDecoration = TextDecoration.Underline,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black,
-                                    modifier = Modifier
-                                        .clickable {
-                                            clipboardManager.setText(AnnotatedString(inviteCode))
-                                            Toast.makeText(context, "Code copied!", Toast.LENGTH_SHORT).show()
-                                        }
-                                        .padding(8.dp)
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "COPY",
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        textDecoration = TextDecoration.Underline,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black,
+                                        modifier = Modifier
+                                            .clickable {
+                                                clipboardManager.setText(AnnotatedString(inviteCode))
+                                                Toast.makeText(context, "Code copied!", Toast.LENGTH_SHORT).show()
+                                            }
+                                            .padding(8.dp)
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    IconButton(
+                                        onClick = {
+                                            val sendIntent = Intent().apply {
+                                                action = Intent.ACTION_SEND
+                                                putExtra(Intent.EXTRA_TEXT, "Join my drawing board on DrawShare! Code: $inviteCode")
+                                                type = "text/plain"
+                                            }
+                                            val shareIntent = Intent.createChooser(sendIntent, null)
+                                            context.startActivity(shareIntent)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Share,
+                                            contentDescription = "Share code",
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -890,6 +905,40 @@ fun ActiveBoardScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        // Share App Button
+                        Button(
+                            onClick = {
+                                val sendIntent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(Intent.EXTRA_TEXT, "Download the DrawShare app and let's draw together!")
+                                    type = "text/plain"
+                                }
+                                val shareIntent = Intent.createChooser(sendIntent, "Share DrawShare")
+                                context.startActivity(shareIntent)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.Black,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "SHARE APP TO FRIEND",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
                         // High contrast Danger Zone disconnect link
                         Button(
                             onClick = { viewModel.disconnect() },
@@ -933,7 +982,7 @@ fun ActiveBoardScreen(
                 onClick = { activeTab = 0 }
             ) {
                 Icon(
-                    imageVector = Icons.Default.List,
+                    imageVector = Icons.AutoMirrored.Filled.List,
                     contentDescription = "History Log",
                     tint = if (activeTab == 0) Color.Black else Color(0xFFD4D4D8),
                     modifier = Modifier.size(24.dp)
@@ -1022,7 +1071,7 @@ fun DrawingHistoryCard(message: UIMessage) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val label = if (message.isReceived) "RECEIVED FROM PARTNER" else "SENT BY YOU"
+            val label = if (message.isReceived) message.senderName.uppercase() else "YOU"
             val labelColor = if (message.isReceived) Color(0xFFFF6B6B) else Color.Black
 
             Text(
@@ -1067,8 +1116,8 @@ fun DrawingCanvas(
     selectedAlpha: Float,
     selectedWidth: Float
 ) {
-    var rawWidth by remember { mutableStateOf(0) }
-    var rawHeight by remember { mutableStateOf(0) }
+    var rawWidth by remember { mutableIntStateOf(0) }
+    var rawHeight by remember { mutableIntStateOf(0) }
     val currentPath = remember { mutableStateListOf<StrokePoint>() }
 
     Canvas(

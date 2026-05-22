@@ -6,6 +6,8 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.util.Log
+import androidx.glance.appwidget.updateAll
+import com.example.ui.widget.LatestDrawingWidget
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CoroutineScope
@@ -22,17 +24,17 @@ import java.util.UUID
 
 class DrawRepository(
     private val context: Context,
-    private val drawingDao: DrawingDao
+    private val drawingDao: DrawingDao,
 ) {
     private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
     private val listAdapter = moshi.adapter<List<DrawStroke>>(
-        com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java)
+        com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java),
     )
 
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    private val _isInternetAvailable = MutableStateFlow(true)
+    private val _isInternetAvailable = MutableStateFlow(value = true)
     val isInternetAvailable: StateFlow<Boolean> = _isInternetAvailable
 
     private val _connectionState = MutableStateFlow(WebSocketConnectionState.DISCONNECTED)
@@ -71,12 +73,14 @@ class DrawRepository(
             val activeNetwork = connectivityManager.activeNetwork
             val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
             _isInternetAvailable.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) != false
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             _isInternetAvailable.value = true
         }
 
         try {
-            connectivityManager.registerNetworkCallback(networkRequest, object : ConnectivityManager.NetworkCallback() {
+            connectivityManager.registerNetworkCallback(
+                networkRequest,
+                object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     _isInternetAvailable.value = true
                     // Only reconnect if we are actually disconnected.
@@ -95,7 +99,8 @@ class DrawRepository(
                 override fun onLost(network: Network) {
                     addLog("Network reported lost")
                 }
-            })
+            }
+            )
         } catch (e: Exception) {
             Log.e("DrawRepository", "Failed to register network callback", e)
         }
@@ -106,7 +111,7 @@ class DrawRepository(
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             kotlinx.coroutines.delay(3000)
-            if (currentInviteCode == inviteCode && _connectionState.value != WebSocketConnectionState.CONNECTED) {
+            if ((currentInviteCode == inviteCode) && (_connectionState.value != WebSocketConnectionState.CONNECTED)) {
                 addLog("Auto-reconnect triggered for room: $inviteCode")
                 connectToRoom(inviteCode)
             }
@@ -126,11 +131,9 @@ class DrawRepository(
         _connectionState.value = WebSocketConnectionState.CONNECTING
         reconnectJob?.cancel()
 
-        // Allow WebSocket connection to attempt anyway. This makes the connection resilient
-        // to platform-specific reporting issues on some Android ROMs/vendors.
-
         // We use the globally trusted public testing sandbox key from PieSocket
-        val url = "wss://free.piesocket.com/v3/$inviteCode?api_key=KYV0abIzOsY35Fa7HXXByTdbV9LBgJnPAYflftqt"
+        val apiKey = com.example.BuildConfig.PIESOCKET_API_KEY
+        val url = "wss://free.blr2.piesocket.com/v3/$inviteCode?api_key=$apiKey&notify_self=1"
         val request = Request.Builder().url(url).build()
 
         activeWebSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
@@ -167,7 +170,7 @@ class DrawRepository(
         _connectionState.value = WebSocketConnectionState.DISCONNECTED
     }
 
-    fun sendDrawing(strokes: List<DrawStroke>) {
+    fun sendDrawing(strokes: List<DrawStroke>, senderName: String) {
         val inviteCode = currentInviteCode ?: return
         val messageId = "msg_${UUID.randomUUID()}"
         val strokesJson = listAdapter.toJson(strokes) ?: "[]"
@@ -176,10 +179,11 @@ class DrawRepository(
             id = messageId,
             inviteCode = inviteCode,
             senderId = localDeviceId,
+            senderName = senderName,
             strokesJson = strokesJson,
             timestamp = System.currentTimeMillis(),
             isReceived = false,
-            isConfirmedDelivered = false
+            isConfirmedDelivered = false,
         )
 
         scope.launch {
@@ -187,11 +191,14 @@ class DrawRepository(
         }
 
         // Broadcaster payload includes device ID and message ID
+        val encryptedStrokes = CryptoUtils.encrypt(strokesJson, inviteCode)
+
         val jsonPayload = JSONObject().apply {
             put("type", "drawing")
             put("id", messageId)
             put("sender", localDeviceId)
-            put("strokesJson", strokesJson)
+            put("senderName", senderName)
+            put("strokesJson", encryptedStrokes)
         }
 
         val success = activeWebSocket?.send(jsonPayload.toString()) == true
@@ -212,21 +219,25 @@ class DrawRepository(
             when (type) {
                 "drawing" -> {
                     val messageId = json.optString("id")
-                    val strokesJson = json.optString("strokesJson")
+                    val senderName = json.optString("senderName", "Partner")
+                    val encryptedStrokes = json.optString("strokesJson")
                     val inviteCode = currentInviteCode ?: return
+                    val strokesJson = CryptoUtils.decrypt(encryptedStrokes, inviteCode)
 
                     val incomingMsg = DrawingMessage(
                         id = messageId,
                         inviteCode = inviteCode,
                         senderId = sender,
+                        senderName = senderName,
                         strokesJson = strokesJson,
                         timestamp = System.currentTimeMillis(),
                         isReceived = true,
-                        isConfirmedDelivered = true
+                        isConfirmedDelivered = true,
                     )
 
                     scope.launch {
                         drawingDao.insertMessage(incomingMsg)
+                        LatestDrawingWidget().updateAll(context)
                     }
 
                     // Acknowledge that we have received this message

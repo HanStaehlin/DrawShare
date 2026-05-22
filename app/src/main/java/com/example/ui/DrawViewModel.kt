@@ -21,6 +21,9 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     private val _inviteCode = MutableStateFlow<String?>(null)
     val inviteCode: StateFlow<String?> = _inviteCode
 
+    private val _userName = MutableStateFlow("User")
+    val userName: StateFlow<String> = _userName
+
     // Draw active properties state (Color, Opacity Slider, Stroke Width)
     private val _selectedColor = MutableStateFlow(0xFF000000.toInt()) // Pure Black
     val selectedColor: StateFlow<Int> = _selectedColor
@@ -36,7 +39,7 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
 
     private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
     private val listAdapter = moshi.adapter<List<DrawStroke>>(
-        com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java)
+        com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java),
     )
 
     // FlatMap room session history to real-time UI render models
@@ -50,16 +53,17 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
                     entityList.map { entity ->
                         val strokes = try {
                             listAdapter.fromJson(entity.strokesJson) ?: emptyList()
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             emptyList()
                         }
                         UIMessage(
                             id = entity.id,
                             senderId = entity.senderId,
+                            senderName = entity.senderName,
                             isReceived = entity.isReceived,
                             isConfirmedDelivered = entity.isConfirmedDelivered,
                             timestamp = entity.timestamp,
-                            strokes = strokes
+                            strokes = strokes,
                         )
                     }
                 }
@@ -113,26 +117,31 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
         activeStrokes.clear()
     }
 
-    fun sendCurrentDrawing() {
-        if (activeStrokes.isEmpty()) return
-        val currentSnap = activeStrokes.toList()
-        repository.sendDrawing(currentSnap)
-        activeStrokes.clear()
-    }
-
     fun clearRoomHistory() {
         val code = _inviteCode.value ?: return
         viewModelScope.launch {
             repository.clearHistory(code)
         }
     }
+
+    fun setUserName(name: String) {
+        _userName.value = name.take(20)
+    }
+
+    fun sendCurrentDrawing() {
+        if (activeStrokes.isEmpty()) return
+        val currentSnap = activeStrokes.toList()
+        repository.sendDrawing(currentSnap, _userName.value)
+        activeStrokes.clear()
+    }
 }
 
 data class UIMessage(
     val id: String,
     val senderId: String,
+    val senderName: String,
     val isReceived: Boolean,
     val isConfirmedDelivered: Boolean,
     val timestamp: Long,
-    val strokes: List<DrawStroke>
+    val strokes: List<DrawStroke>,
 )

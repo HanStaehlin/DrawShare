@@ -8,8 +8,9 @@ data class DrawingMessage(
     @PrimaryKey val id: String,
     val inviteCode: String,
     val senderId: String,
+    val senderName: String = "Partner",
     val strokesJson: String,
     val timestamp: Long = System.currentTimeMillis(),
     val isReceived: Boolean,
-    val isConfirmedDelivered: Boolean
+    val isConfirmedDelivered: Boolean,
 )
