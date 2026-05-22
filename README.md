@@ -1,21 +1,21 @@
-# 🎨 DrawShare
+# DrawShare
 
 DrawShare is a minimalist, real-time collaborative drawing application for Android. It allows users to connect via a shared invite code and draw together on a synchronized canvas.
 
-## ✨ Features
+## Features
 
 - **Real-time Sync**: Drawing strokes are synchronized instantly across devices using WebSockets (PieSocket relay).
-- **🔒 End-to-End Encryption (E2EE)**: All drawing data and user profiles are encrypted using AES-128 (CBC mode) before leaving the device. Only users with the same room code can decrypt the content.
-- **🏠 Home Screen Widget**: A Jetpack Glance-powered widget that displays the latest drawing received from your partner directly on your home screen.
-- **🎨 Creative Tools**:
+- **End-to-End Encryption (E2EE)**: All drawing data and user profiles are encrypted using AES-128 (CBC mode) before leaving the device. Only users with the same room code can decrypt the content.
+- **Home Screen Widget**: A Jetpack Glance-powered widget that displays the latest drawing received from your partner directly on your home screen.
+- **Creative Tools**:
     - 25+ vibrant colors to choose from.
     - Adjustable brush size and opacity.
     - Undo/Redo and Canvas Clear functionality.
-- **👤 User Profiles**: Set a custom display name to identify yourself in the shared history.
+- **User Profiles**: Set a custom display name to identify yourself in the shared history.
 - **History Log**: Browse through a thumbnail feed of all shared drawings in the current session.
 - **Secure by Design**: Sensitive API keys and secrets are managed via the Secrets Gradle Plugin and environment variables.
 
-## 🛠 Tech Stack
+## Tech Stack
 
 - **UI**: Jetpack Compose
 - **Widget**: Jetpack Glance
@@ -24,7 +24,7 @@ DrawShare is a minimalist, real-time collaborative drawing application for Andro
 - **Security**: AES-128 Encryption, SHA-256 Hashing, Secrets Gradle Plugin
 - **Architecture**: MVVM with StateFlow and Coroutines
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - [Android Studio Ladybug](https://developer.android.com/studio) or newer.
@@ -43,7 +43,7 @@ DrawShare is a minimalist, real-time collaborative drawing application for Andro
     - Click **Sync Project with Gradle Files**.
     - Run the `app` module on an emulator or physical device.
 
-## 📱 How to Use
+## How to Use
 1.  **Enter your name** on the starting screen.
 2.  **Create a Board**: Tap "Create New Draw Board" to generate a 5-digit code.
 3.  **Invite a Friend**: Share the code via the "Share" button in the settings tab.
