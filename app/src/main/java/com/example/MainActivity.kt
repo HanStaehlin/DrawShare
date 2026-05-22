@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
@@ -326,6 +327,8 @@ fun ActiveBoardScreen(
     val selectedColor by viewModel.selectedColor.collectAsStateWithLifecycle()
     val selectedAlpha by viewModel.selectedAlpha.collectAsStateWithLifecycle()
     val selectedWidth by viewModel.selectedWidth.collectAsStateWithLifecycle()
+    val isEraserMode by viewModel.isEraserMode.collectAsStateWithLifecycle()
+    val messageText by viewModel.currentMessageText.collectAsStateWithLifecycle()
     val debugLog by viewModel.debugLog.collectAsStateWithLifecycle()
 
     Column(
@@ -482,7 +485,8 @@ fun ActiveBoardScreen(
                                 viewModel = viewModel,
                                 selectedColor = selectedColor,
                                 selectedAlpha = selectedAlpha,
-                                selectedWidth = selectedWidth
+                                selectedWidth = selectedWidth,
+                                isEraserMode = isEraserMode,
                             )
 
                             // Clean, absolute drawing hint overlay
@@ -529,105 +533,179 @@ fun ActiveBoardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Dynamic Color Tool Preview Widget
+                                // Pen / Eraser Toggle
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    modifier = Modifier
-                                        .clickable { showColors = !showColors }
-                                        .padding(vertical = 4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box(
+                                    IconButton(
+                                        onClick = { viewModel.toggleEraser(false) },
                                         modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(Color.Black)
-                                            .padding(2.dp)
+                                            .size(40.dp)
+                                            .background(
+                                                if (!isEraserMode) Color.Black else Color.Transparent,
+                                                CircleShape
+                                            )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Pen",
+                                            tint = if (!isEraserMode) Color.White else Color.Black,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { viewModel.toggleEraser(true) },
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .background(
+                                                if (isEraserMode) Color.Black else Color.Transparent,
+                                                CircleShape
+                                            )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Clear, // Using Clear as Eraser proxy
+                                            contentDescription = "Eraser",
+                                            tint = if (isEraserMode) Color.White else Color.Black,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+
+                                // Quick clear & undo text buttons in minimal style
+                                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    Text(
+                                        text = "UNDO",
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        textDecoration = TextDecoration.Underline,
+                                        color = Color.Black,
+                                        modifier = Modifier
+                                            .clickable { viewModel.undoLastStroke() }
+                                            .testTag("undo_button")
+                                    )
+                                    Text(
+                                        text = "RESET",
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        textDecoration = TextDecoration.Underline,
+                                        color = Color.Black,
+                                        modifier = Modifier
+                                            .clickable { viewModel.clearCanvas() }
+                                            .testTag("clear_canvas_button")
+                                    )
+                                }
+                            }
+
+                            if (!isEraserMode) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Dynamic Color Tool Preview Widget
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier
+                                            .clickable { showColors = !showColors }
+                                            .padding(vertical = 4.dp)
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .fillMaxSize()
+                                                .size(32.dp)
                                                 .clip(CircleShape)
-                                                .background(Color.White)
-                                                .padding(3.dp)
+                                                .background(Color.Black)
+                                                .padding(2.dp)
                                         ) {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxSize()
                                                     .clip(CircleShape)
-                                                    .background(Color(selectedColor))
-                                            )
+                                                    .background(Color.White)
+                                                    .padding(3.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .clip(CircleShape)
+                                                        .background(Color(selectedColor))
+                                                )
+                                            }
                                         }
+                                        Text(
+                                            text = "COLOR",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color.Black
+                                        )
                                     }
-                                    Text(
-                                        text = "COLOR",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 1.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color.Black
-                                    )
-                                }
 
-                                AnimatedVisibility(
-                                    visible = showColors,
-                                    enter = slideInHorizontally { it } + fadeIn(),
-                                    exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
-                                ) {
-                                    LazyRow(
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    AnimatedVisibility(
+                                        visible = showColors,
+                                        enter = slideInHorizontally { it } + fadeIn(),
+                                        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
                                     ) {
-                                        items(colorsList) { colorArgb ->
-                                            val isSelected = selectedColor == colorArgb
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(24.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(colorArgb))
-                                                    .border(
-                                                        width = if (isSelected) 2.dp else 0.dp,
-                                                        color = if (isSelected) Color.Black else Color.Transparent,
-                                                        shape = CircleShape
-                                                    )
-                                                    .clickable {
-                                                        viewModel.changeColor(colorArgb)
-                                                        showColors = false
-                                                    }
-                                                    .testTag("color_$colorArgb")
-                                            )
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            items(colorsList) { colorArgb ->
+                                                val isSelected = selectedColor == colorArgb
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(colorArgb))
+                                                        .border(
+                                                            width = if (isSelected) 2.dp else 0.dp,
+                                                            color = if (isSelected) Color.Black else Color.Transparent,
+                                                            shape = CircleShape
+                                                        )
+                                                        .clickable {
+                                                            viewModel.changeColor(colorArgb)
+                                                            showColors = false
+                                                        }
+                                                        .testTag("color_$colorArgb")
+                                                )
+                                            }
                                         }
-                                    }
-                                }
-
-                                // Quick clear & undo text buttons in minimal style
-                                if (!showColors) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                        Text(
-                                            text = "UNDO",
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            textDecoration = TextDecoration.Underline,
-                                            color = Color.Black,
-                                            modifier = Modifier
-                                                .clickable { viewModel.undoLastStroke() }
-                                                .testTag("undo_button")
-                                        )
-                                        Text(
-                                            text = "RESET",
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            textDecoration = TextDecoration.Underline,
-                                            color = Color.Black,
-                                            modifier = Modifier
-                                                .clickable { viewModel.clearCanvas() }
-                                                .testTag("clear_canvas_button")
-                                        )
                                     }
                                 }
                             }
+
+                            // Text Message Input
+                            TextField(
+                                value = messageText,
+                                onValueChange = { viewModel.setMessageText(it) },
+                                placeholder = {
+                                    Text(
+                                        "ADD A MESSAGE...",
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color(0xFFF9F9FB),
+                                    unfocusedContainerColor = Color(0xFFF9F9FB),
+                                    focusedIndicatorColor = Color.Black,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                ),
+                                textStyle = LocalTextStyle.current.copy(
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
 
                             // Sliders custom layout mimicking original slider parameters
                             Row(
@@ -841,7 +919,7 @@ fun ActiveBoardScreen(
                                 WebSocketConnectionState.DISCONNECTED -> "Disconnected"
                             }
                             Text(
-                                text = "Relay Network: PieSocket Pub-Sub Relay Server\n" +
+                                text = "Relay Network: Firebase Firestore (Persistent)\n" +
                                        "Status: $statusDescription\n" +
                                        "Messages Exchanged: ${roomMessages.size}",
                                 fontSize = 12.sp,
@@ -1051,7 +1129,7 @@ fun DrawingHistoryCard(message: UIMessage) {
                             color = Color(stroke.colorArgb),
                             alpha = stroke.alpha,
                             style = Stroke(
-                                width = stroke.width * (size.width / 400f).coerceAtLeast(1f),
+                                width = stroke.width * (size.width / 1000f).coerceAtLeast(1f),
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round
                             )
@@ -1106,6 +1184,24 @@ fun DrawingHistoryCard(message: UIMessage) {
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
         )
+
+        if (!message.text.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFF9F9FB))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    text = message.text,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color.Black
+                )
+            }
+        }
     }
 }
 
@@ -1114,7 +1210,8 @@ fun DrawingCanvas(
     viewModel: DrawViewModel,
     selectedColor: Int,
     selectedAlpha: Float,
-    selectedWidth: Float
+    selectedWidth: Float,
+    isEraserMode: Boolean,
 ) {
     var rawWidth by remember { mutableIntStateOf(0) }
     var rawHeight by remember { mutableIntStateOf(0) }
@@ -1123,7 +1220,7 @@ fun DrawingCanvas(
     Canvas(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(selectedColor, selectedAlpha, selectedWidth, rawWidth, rawHeight) {
+            .pointerInput(selectedColor, selectedAlpha, selectedWidth, rawWidth, rawHeight, isEraserMode) {
                 detectDragGestures(
                     onDragStart = { offset ->
                         if (rawWidth > 0 && rawHeight > 0) {
@@ -1136,9 +1233,10 @@ fun DrawingCanvas(
                             viewModel.addStroke(
                                 DrawStroke(
                                     points = currentPath.toList(),
-                                    colorArgb = selectedColor,
+                                    colorArgb = if (isEraserMode) 0 else selectedColor,
                                     width = selectedWidth,
-                                    alpha = selectedAlpha
+                                    alpha = if (isEraserMode) 1.0f else selectedAlpha,
+                                    isEraser = isEraserMode,
                                 )
                             )
                         }
@@ -1159,6 +1257,8 @@ fun DrawingCanvas(
         rawWidth = size.width.toInt()
         rawHeight = size.height.toInt()
 
+        val canvasBackground = Color(0xFFF9F9FB)
+
         // 1. Draw completed committed strokes
         for (stroke in viewModel.activeStrokes) {
             if (stroke.points.isNotEmpty()) {
@@ -1171,10 +1271,10 @@ fun DrawingCanvas(
                 }
                 drawPath(
                     path = path,
-                    color = Color(stroke.colorArgb),
+                    color = if (stroke.isEraser) canvasBackground else Color(stroke.colorArgb),
                     alpha = stroke.alpha,
                     style = Stroke(
-                        width = stroke.width,
+                        width = stroke.width * (size.width / 1000f).coerceAtLeast(1f),
                         cap = StrokeCap.Round,
                         join = StrokeJoin.Round
                     )
@@ -1193,10 +1293,10 @@ fun DrawingCanvas(
             }
             drawPath(
                 path = path,
-                color = Color(selectedColor),
-                alpha = selectedAlpha,
+                color = if (isEraserMode) canvasBackground else Color(selectedColor),
+                alpha = if (isEraserMode) 1.0f else selectedAlpha,
                 style = Stroke(
-                    width = selectedWidth,
+                    width = selectedWidth * (size.width / 1000f).coerceAtLeast(1f),
                     cap = StrokeCap.Round,
                     join = StrokeJoin.Round
                 )

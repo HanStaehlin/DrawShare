@@ -10,6 +10,7 @@ data class DrawingMessage(
     val senderId: String,
     val senderName: String = "Partner",
     val strokesJson: String,
+    val text: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val isReceived: Boolean,
     val isConfirmedDelivered: Boolean,

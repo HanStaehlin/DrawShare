@@ -34,6 +34,12 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedWidth = MutableStateFlow(8.0f) // Default Brush size
     val selectedWidth: StateFlow<Float> = _selectedWidth
 
+    private val _isEraserMode = MutableStateFlow(value = false)
+    val isEraserMode: StateFlow<Boolean> = _isEraserMode
+
+    private val _currentMessageText = MutableStateFlow("")
+    val currentMessageText: StateFlow<String> = _currentMessageText
+
     // Direct thread-safe active canvas stokes path tracker
     val activeStrokes = mutableStateListOf<DrawStroke>()
 
@@ -63,6 +69,7 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
                             isReceived = entity.isReceived,
                             isConfirmedDelivered = entity.isConfirmedDelivered,
                             timestamp = entity.timestamp,
+                            text = entity.text,
                             strokes = strokes,
                         )
                     }
@@ -103,6 +110,14 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
         _selectedWidth.value = width
     }
 
+    fun toggleEraser(enabled: Boolean) {
+        _isEraserMode.value = enabled
+    }
+
+    fun setMessageText(text: String) {
+        _currentMessageText.value = text
+    }
+
     fun addStroke(stroke: DrawStroke) {
         activeStrokes.add(stroke)
     }
@@ -131,8 +146,9 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     fun sendCurrentDrawing() {
         if (activeStrokes.isEmpty()) return
         val currentSnap = activeStrokes.toList()
-        repository.sendDrawing(currentSnap, _userName.value)
+        repository.sendDrawing(currentSnap, _userName.value, _currentMessageText.value.ifBlank { null })
         activeStrokes.clear()
+        _currentMessageText.value = ""
     }
 }
 
@@ -143,5 +159,6 @@ data class UIMessage(
     val isReceived: Boolean,
     val isConfirmedDelivered: Boolean,
     val timestamp: Long,
+    val text: String? = null,
     val strokes: List<DrawStroke>,
 )

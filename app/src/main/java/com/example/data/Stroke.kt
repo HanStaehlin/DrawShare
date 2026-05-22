@@ -14,4 +14,5 @@ data class DrawStroke(
     val colorArgb: Int,
     val width: Float,
     val alpha: Float,
+    val isEraser: Boolean = false,
 )

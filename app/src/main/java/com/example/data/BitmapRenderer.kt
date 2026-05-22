@@ -16,7 +16,8 @@ object BitmapRenderer {
     fun renderStrokesToBitmap(strokesJson: String, width: Int = 400, height: Int = 300): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        canvas.drawColor(0xFFF9F9FB.toInt()) // Match canvas background color
+        val canvasBackground = 0xFFF9F9FB.toInt()
+        canvas.drawColor(canvasBackground) // Match canvas background color
 
         val strokes = try {
             listAdapter.fromJson(strokesJson) ?: emptyList()
@@ -34,9 +35,9 @@ object BitmapRenderer {
         for (stroke in strokes) {
             if (stroke.points.isEmpty()) continue
             
-            paint.color = stroke.colorArgb
-            paint.strokeWidth = stroke.width * (width / 400f).coerceAtLeast(1f)
-            paint.alpha = (stroke.alpha * 255).toInt()
+            paint.color = if (stroke.isEraser) canvasBackground else stroke.colorArgb
+            paint.strokeWidth = stroke.width * (width / 1000f).coerceAtLeast(1f)
+            paint.alpha = if (stroke.isEraser) 255 else (stroke.alpha * 255).toInt()
 
             val path = Path()
             val first = stroke.points.first()

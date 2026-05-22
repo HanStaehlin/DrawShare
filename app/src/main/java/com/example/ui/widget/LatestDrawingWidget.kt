@@ -23,13 +23,13 @@ class LatestDrawingWidget : GlanceAppWidget() {
 
         provideContent {
             GlanceTheme {
-                WidgetContent(latestMessage?.strokesJson)
+                WidgetContent(latestMessage?.strokesJson, latestMessage?.text)
             }
         }
     }
 
     @Composable
-    private fun WidgetContent(strokesJson: String?) {
+    private fun WidgetContent(strokesJson: String?, text: String?) {
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
@@ -50,7 +50,8 @@ class LatestDrawingWidget : GlanceAppWidget() {
 
             Box(
                 modifier = GlanceModifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .defaultWeight()
                     .background(Color(0xFFF9F9FB))
                     .cornerRadius(16.dp)
             ) {
@@ -72,6 +73,18 @@ class LatestDrawingWidget : GlanceAppWidget() {
                         )
                     }
                 }
+            }
+
+            if (!text.isNullOrBlank()) {
+                Text(
+                    text = text,
+                    maxLines = 2,
+                    style = TextStyle(
+                        color = ColorProvider(Color.Black),
+                        fontSize = 12.sp,
+                    ),
+                    modifier = GlanceModifier.padding(top = 4.dp)
+                )
             }
         }
     }

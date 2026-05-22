@@ -8,28 +8,26 @@ import android.net.NetworkRequest
 import android.util.Log
 import androidx.glance.appwidget.updateAll
 import com.example.ui.widget.LatestDrawingWidget
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.google.firebase.firestore.DocumentChange
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.Date
 import kotlinx.coroutines.launch
-import okhttp3.*
-import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 class DrawRepository(
     private val context: Context,
     private val drawingDao: DrawingDao,
 ) {
-    private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
-    private val listAdapter = moshi.adapter<List<DrawStroke>>(
-        com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java),
-    )
+    private val db = FirebaseFirestore.getInstance()
+    private var snapshotListener: ListenerRegistration? = null
 
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -52,11 +50,8 @@ class DrawRepository(
         _debugLog.value = (_debugLog.value + entry).takeLast(50)
     }
 
-    private var activeWebSocket: WebSocket? = null
-    private val okHttpClient = OkHttpClient.Builder().build()
     private var currentInviteCode: String? = null
     private val scope = CoroutineScope(Dispatchers.IO)
-    private var reconnectJob: kotlinx.coroutines.Job? = null
 
     val localDeviceId: String = UUID.randomUUID().toString()
 
@@ -81,99 +76,79 @@ class DrawRepository(
             connectivityManager.registerNetworkCallback(
                 networkRequest,
                 object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    _isInternetAvailable.value = true
-                    // Only reconnect if we are actually disconnected.
-                    // Don't tear down a healthy connection just because Android
-                    // re-reported network availability.
-                    if (_connectionState.value == WebSocketConnectionState.DISCONNECTED) {
-                        addLog("Network available → auto-reconnecting")
-                        currentInviteCode?.let {
-                            connectToRoom(it)
-                        }
-                    } else {
-                        addLog("Network available (already ${_connectionState.value}, skipping reconnect)")
+                    override fun onAvailable(network: Network) {
+                        _isInternetAvailable.value = true
+                        addLog("Network available")
+                    }
+
+                    override fun onLost(network: Network) {
+                        _isInternetAvailable.value = false
+                        addLog("Network reported lost")
                     }
                 }
-
-                override fun onLost(network: Network) {
-                    addLog("Network reported lost")
-                }
-            }
             )
         } catch (e: Exception) {
             Log.e("DrawRepository", "Failed to register network callback", e)
         }
     }
 
-    private fun scheduleReconnect() {
-        val inviteCode = currentInviteCode ?: return
-        reconnectJob?.cancel()
-        reconnectJob = scope.launch {
-            kotlinx.coroutines.delay(3000)
-            if ((currentInviteCode == inviteCode) && (_connectionState.value != WebSocketConnectionState.CONNECTED)) {
-                addLog("Auto-reconnect triggered for room: $inviteCode")
-                connectToRoom(inviteCode)
-            }
-        }
-    }
-
     fun connectToRoom(inviteCode: String) {
-        // Skip if already connected to this exact room
-        if (inviteCode == currentInviteCode
-            && _connectionState.value == WebSocketConnectionState.CONNECTED) {
-            addLog("connectToRoom skipped (already connected to $inviteCode)")
+        if (inviteCode == currentInviteCode && snapshotListener != null) {
             return
         }
-        addLog("Connecting to room: $inviteCode")
+
+        addLog("Connecting to Firestore room: $inviteCode")
         currentInviteCode = inviteCode
-        activeWebSocket?.close(1000, "Switching room")
+        
+        // Stop any previous listener
+        snapshotListener?.remove()
         _connectionState.value = WebSocketConnectionState.CONNECTING
-        reconnectJob?.cancel()
 
-        // We use the globally trusted public testing sandbox key from PieSocket
-        val apiKey = com.example.BuildConfig.PIESOCKET_API_KEY
-        val url = "wss://free.blr2.piesocket.com/v3/$inviteCode?api_key=$apiKey&notify_self=1"
-        val request = Request.Builder().url(url).build()
+        val roomRef = db.collection("rooms").document(inviteCode).collection("messages")
+        
+        // Listen for new messages
+        snapshotListener = roomRef
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshots, e ->
+                if (e != null) {
+                    addLog("❌ Firestore Listen Error: ${e.message}")
+                    _connectionState.value = WebSocketConnectionState.DISCONNECTED
+                    return@addSnapshotListener
+                }
 
-        activeWebSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
                 _connectionState.value = WebSocketConnectionState.CONNECTED
-                addLog("✅ WebSocket CONNECTED to room: $inviteCode")
-                reconnectJob?.cancel()
+                
+                if (snapshots != null) {
+                    for (dc in snapshots.documentChanges) {
+                        when (dc.type) {
+                            DocumentChange.Type.ADDED -> {
+                                handleIncomingFirestoreMessage(dc.document.data)
+                            }
+                            DocumentChange.Type.MODIFIED -> {
+                                handleIncomingFirestoreMessage(dc.document.data)
+                            }
+                            else -> {}
+                        }
+                    }
+                }
             }
-
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                handleIncomingMessage(text)
-            }
-
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                addLog("WebSocket closing (code=$code, reason=$reason)")
-                _connectionState.value = WebSocketConnectionState.DISCONNECTED
-                scheduleReconnect()
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                addLog("❌ WebSocket FAILURE: ${t.message}")
-                _connectionState.value = WebSocketConnectionState.DISCONNECTED
-                scheduleReconnect()
-            }
-        })
     }
 
     fun disconnect() {
         currentInviteCode = null
-        reconnectJob?.cancel()
-        reconnectJob = null
-        activeWebSocket?.close(1000, "Disconnect called")
-        activeWebSocket = null
+        snapshotListener?.remove()
+        snapshotListener = null
         _connectionState.value = WebSocketConnectionState.DISCONNECTED
+        addLog("Disconnected from room")
     }
 
-    fun sendDrawing(strokes: List<DrawStroke>, senderName: String) {
+    fun sendDrawing(strokes: List<DrawStroke>, senderName: String, text: String? = null) {
         val inviteCode = currentInviteCode ?: return
         val messageId = "msg_${UUID.randomUUID()}"
-        val strokesJson = listAdapter.toJson(strokes) ?: "[]"
+        
+        val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+        val adapter = moshi.adapter<List<DrawStroke>>(com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java))
+        val strokesJson = adapter.toJson(strokes) ?: "[]"
 
         val msg = DrawingMessage(
             id = messageId,
@@ -181,6 +156,7 @@ class DrawRepository(
             senderId = localDeviceId,
             senderName = senderName,
             strokesJson = strokesJson,
+            text = text,
             timestamp = System.currentTimeMillis(),
             isReceived = false,
             isConfirmedDelivered = false,
@@ -190,39 +166,42 @@ class DrawRepository(
             drawingDao.insertMessage(msg)
         }
 
-        // Broadcaster payload includes device ID and message ID
         val encryptedStrokes = CryptoUtils.encrypt(strokesJson, inviteCode)
 
-        val jsonPayload = JSONObject().apply {
-            put("type", "drawing")
-            put("id", messageId)
-            put("sender", localDeviceId)
-            put("senderName", senderName)
-            put("strokesJson", encryptedStrokes)
-        }
+        val data = hashMapOf(
+            "type" to "drawing",
+            "id" to messageId,
+            "sender" to localDeviceId,
+            "senderName" to senderName,
+            "strokesJson" to encryptedStrokes,
+            "text" to text,
+            "timestamp" to msg.timestamp
+        )
 
-        val success = activeWebSocket?.send(jsonPayload.toString()) == true
-        if (!success) {
-            Log.e("DrawRepository", "Could not send message over WebSocket")
-        }
+        db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
+            .set(data)
+            .addOnSuccessListener {
+                addLog("✅ Drawing message SAVED to cloud: $inviteCode")
+            }
+            .addOnFailureListener { e ->
+                addLog("❌ Cloud SEND failure: ${e.message}")
+            }
     }
 
-    private fun handleIncomingMessage(text: String) {
-        try {
-            val json = JSONObject(text)
-            val type = json.optString("type")
-            val sender = json.optString("sender")
+    private fun handleIncomingFirestoreMessage(data: Map<String, Any?>) {
+        val sender = data["sender"] as? String ?: return
+        val type = data["type"] as? String ?: return
+        val messageId = data["id"] as? String ?: return
 
-            // Deduplicate self echo messages (PieSocket broadcasts to all connected clients in the same channel)
-            if (sender == localDeviceId) return
-
+        if (sender != localDeviceId) {
             when (type) {
                 "drawing" -> {
-                    val messageId = json.optString("id")
-                    val senderName = json.optString("senderName", "Partner")
-                    val encryptedStrokes = json.optString("strokesJson")
                     val inviteCode = currentInviteCode ?: return
+                    val senderName = data["senderName"] as? String ?: "Partner"
+                    val encryptedStrokes = data["strokesJson"] as? String ?: ""
+                    val text = data["text"] as? String
                     val strokesJson = CryptoUtils.decrypt(encryptedStrokes, inviteCode)
+                    val timestamp = data["timestamp"] as? Long ?: System.currentTimeMillis()
 
                     val incomingMsg = DrawingMessage(
                         id = messageId,
@@ -230,7 +209,8 @@ class DrawRepository(
                         senderId = sender,
                         senderName = senderName,
                         strokesJson = strokesJson,
-                        timestamp = System.currentTimeMillis(),
+                        text = text,
+                        timestamp = timestamp,
                         isReceived = true,
                         isConfirmedDelivered = true,
                     )
@@ -240,23 +220,19 @@ class DrawRepository(
                         LatestDrawingWidget().updateAll(context)
                     }
 
-                    // Acknowledge that we have received this message
-                    val ackPayload = JSONObject().apply {
-                        put("type", "ack")
-                        put("id", messageId)
-                        put("sender", localDeviceId)
-                    }
-                    activeWebSocket?.send(ackPayload.toString())
-                }
-                "ack" -> {
-                    val messageId = json.optString("id")
-                    scope.launch {
-                        drawingDao.confirmDelivery(messageId)
-                    }
+                    // Acknowledge by updating the document in Firestore
+                    db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
+                        .update("deliveredTo", com.google.firebase.firestore.FieldValue.arrayUnion(localDeviceId))
                 }
             }
-        } catch (e: Exception) {
-            Log.e("DrawRepository", "Error handling incoming message", e)
+        } else {
+            // Check for delivery confirmation on our own messages
+            val deliveredTo = data["deliveredTo"] as? List<*>
+            if (!deliveredTo.isNullOrEmpty()) {
+                scope.launch {
+                    drawingDao.confirmDelivery(messageId)
+                }
+            }
         }
     }
 
