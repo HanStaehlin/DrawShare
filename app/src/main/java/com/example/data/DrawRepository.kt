@@ -27,7 +27,8 @@ class DrawRepository(
     private val drawingDao: DrawingDao,
 ) {
     private val db = FirebaseFirestore.getInstance()
-    private var snapshotListener: ListenerRegistration? = null
+    private val snapshotListeners = mutableMapOf<String, ListenerRegistration>()
+    private val roomConnectionStates = mutableMapOf<String, WebSocketConnectionState>()
 
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -50,8 +51,17 @@ class DrawRepository(
         _debugLog.value = (_debugLog.value + entry).takeLast(50)
     }
 
-    private var currentInviteCode: String? = null
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    private fun recomputeAggregateConnectionState() {
+        _connectionState.value = when {
+            roomConnectionStates.values.any { it == WebSocketConnectionState.CONNECTED } ->
+                WebSocketConnectionState.CONNECTED
+            roomConnectionStates.values.any { it == WebSocketConnectionState.CONNECTING } ->
+                WebSocketConnectionState.CONNECTING
+            else -> WebSocketConnectionState.DISCONNECTED
+        }
+    }
 
     val localDeviceId: String = UUID.randomUUID().toString()
 
@@ -93,39 +103,33 @@ class DrawRepository(
     }
 
     fun connectToRoom(inviteCode: String) {
-        if (inviteCode == currentInviteCode && snapshotListener != null) {
-            return
-        }
+        if (snapshotListeners.containsKey(inviteCode)) return
 
         addLog("Connecting to Firestore room: $inviteCode")
-        currentInviteCode = inviteCode
-        
-        // Stop any previous listener
-        snapshotListener?.remove()
-        _connectionState.value = WebSocketConnectionState.CONNECTING
+        roomConnectionStates[inviteCode] = WebSocketConnectionState.CONNECTING
+        recomputeAggregateConnectionState()
 
         val roomRef = db.collection("rooms").document(inviteCode).collection("messages")
-        
-        // Listen for new messages
-        snapshotListener = roomRef
+
+        snapshotListeners[inviteCode] = roomRef
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshots, e ->
                 if (e != null) {
-                    addLog("❌ Firestore Listen Error: ${e.message}")
-                    _connectionState.value = WebSocketConnectionState.DISCONNECTED
+                    addLog("❌ Firestore Listen Error ($inviteCode): ${e.message}")
+                    roomConnectionStates[inviteCode] = WebSocketConnectionState.DISCONNECTED
+                    recomputeAggregateConnectionState()
                     return@addSnapshotListener
                 }
 
-                _connectionState.value = WebSocketConnectionState.CONNECTED
-                
+                roomConnectionStates[inviteCode] = WebSocketConnectionState.CONNECTED
+                recomputeAggregateConnectionState()
+
                 if (snapshots != null) {
                     for (dc in snapshots.documentChanges) {
                         when (dc.type) {
-                            DocumentChange.Type.ADDED -> {
-                                handleIncomingFirestoreMessage(dc.document.data)
-                            }
+                            DocumentChange.Type.ADDED,
                             DocumentChange.Type.MODIFIED -> {
-                                handleIncomingFirestoreMessage(dc.document.data)
+                                handleIncomingFirestoreMessage(inviteCode, dc.document.data)
                             }
                             DocumentChange.Type.REMOVED -> {
                                 val removedId = dc.document.id
@@ -133,7 +137,7 @@ class DrawRepository(
                                     drawingDao.deleteMessage(removedId)
                                     LatestDrawingWidget().updateAll(context)
                                 }
-                                addLog("🗑️ Drawing removed by partner: $removedId")
+                                addLog("🗑️ Drawing removed by partner ($inviteCode): $removedId")
                             }
                         }
                     }
@@ -141,21 +145,26 @@ class DrawRepository(
             }
     }
 
-    fun disconnect() {
-        currentInviteCode = null
-        snapshotListener?.remove()
-        snapshotListener = null
-        _connectionState.value = WebSocketConnectionState.DISCONNECTED
-        addLog("Disconnected from room")
+    fun disconnectFromRoom(inviteCode: String) {
+        snapshotListeners.remove(inviteCode)?.remove()
+        roomConnectionStates.remove(inviteCode)
+        recomputeAggregateConnectionState()
+        addLog("Disconnected from room: $inviteCode")
     }
 
-    fun sendDrawing(strokes: List<DrawStroke>, senderName: String, text: String? = null) {
-        val inviteCode = currentInviteCode ?: return
+    fun disconnectAll() {
+        snapshotListeners.values.forEach { it.remove() }
+        snapshotListeners.clear()
+        roomConnectionStates.clear()
+        recomputeAggregateConnectionState()
+        addLog("Disconnected from all rooms")
+    }
+
+    fun sendDrawing(inviteCode: String, strokes: List<DrawStroke>, senderName: String, text: String? = null) {
+        if (!snapshotListeners.containsKey(inviteCode)) return
         val messageId = "msg_${UUID.randomUUID()}"
-        
-        val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
-        val adapter = moshi.adapter<List<DrawStroke>>(com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java))
-        val strokesJson = adapter.toJson(strokes) ?: "[]"
+
+        val strokesJson = encodeStrokes(strokes)
 
         val msg = DrawingMessage(
             id = messageId,
@@ -195,7 +204,7 @@ class DrawRepository(
             }
     }
 
-    private fun handleIncomingFirestoreMessage(data: Map<String, Any?>) {
+    private fun handleIncomingFirestoreMessage(inviteCode: String, data: Map<String, Any?>) {
         val sender = data["sender"] as? String ?: return
         val type = data["type"] as? String ?: return
         val messageId = data["id"] as? String ?: return
@@ -203,7 +212,6 @@ class DrawRepository(
         if (sender != localDeviceId) {
             when (type) {
                 "drawing" -> {
-                    val inviteCode = currentInviteCode ?: return
                     val senderName = data["senderName"] as? String ?: "Partner"
                     val encryptedStrokes = data["strokesJson"] as? String ?: ""
                     val text = data["text"] as? String
@@ -249,8 +257,7 @@ class DrawRepository(
         drawingDao.clearMessagesForRoom(inviteCode)
     }
 
-    fun deleteMessage(messageId: String) {
-        val inviteCode = currentInviteCode ?: return
+    fun deleteMessage(inviteCode: String, messageId: String) {
         scope.launch {
             drawingDao.deleteMessage(messageId)
             LatestDrawingWidget().updateAll(context)
@@ -258,7 +265,7 @@ class DrawRepository(
         db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
             .delete()
             .addOnSuccessListener {
-                addLog("🗑️ Drawing deleted from cloud: $messageId")
+                addLog("🗑️ Drawing deleted from cloud ($inviteCode): $messageId")
             }
             .addOnFailureListener { e ->
                 addLog("❌ Cloud DELETE failure: ${e.message}")

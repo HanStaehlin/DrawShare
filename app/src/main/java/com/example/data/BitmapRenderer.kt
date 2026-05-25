@@ -4,26 +4,16 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 object BitmapRenderer {
-    private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
-    private val listAdapter = moshi.adapter<List<DrawStroke>>(
-        com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java),
-    )
 
     fun renderStrokesToBitmap(strokesJson: String, width: Int = 400, height: Int = 300): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val canvasBackground = 0xFFF9F9FB.toInt()
-        canvas.drawColor(canvasBackground) // Match canvas background color
+        canvas.drawColor(canvasBackground)
 
-        val strokes = try {
-            listAdapter.fromJson(strokesJson) ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
-        }
+        val strokes = decodeStrokes(strokesJson)
 
         val paint = Paint().apply {
             isAntiAlias = true
@@ -34,7 +24,7 @@ object BitmapRenderer {
 
         for (stroke in strokes) {
             if (stroke.points.isEmpty()) continue
-            
+
             paint.color = if (stroke.isEraser) canvasBackground else stroke.colorArgb
             paint.strokeWidth = stroke.width * (width / 1000f).coerceAtLeast(1f)
             paint.alpha = if (stroke.isEraser) 255 else (stroke.alpha * 255).toInt()
@@ -42,7 +32,7 @@ object BitmapRenderer {
             val path = Path()
             val first = stroke.points.first()
             path.moveTo(first.x * width, first.y * height)
-            
+
             for (i in 1 until stroke.points.size) {
                 val pt = stroke.points[i]
                 path.lineTo(pt.x * width, pt.y * height)

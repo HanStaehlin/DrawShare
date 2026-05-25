@@ -5,8 +5,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -19,16 +17,21 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     val connectionState: StateFlow<WebSocketConnectionState> = repository.connectionState
     val debugLog: StateFlow<List<String>> = repository.debugLog
 
-    private val _inviteCode = MutableStateFlow<String?>(null)
-    val inviteCode: StateFlow<String?> = _inviteCode
+    private val _joinedRooms = MutableStateFlow<List<String>>(emptyList())
+    val joinedRooms: StateFlow<List<String>> = _joinedRooms
+
+    private val _activeRoom = MutableStateFlow<String?>(null)
+    val activeRoom: StateFlow<String?> = _activeRoom
 
     private val _userName = MutableStateFlow(session.userName ?: "User")
     val userName: StateFlow<String> = _userName
 
     init {
-        session.lastInviteCode?.let { saved ->
-            _inviteCode.value = saved
-            repository.connectToRoom(saved)
+        val saved = session.joinedRooms
+        if (saved.isNotEmpty()) {
+            _joinedRooms.value = saved
+            saved.forEach { repository.connectToRoom(it) }
+            _activeRoom.value = session.activeRoom?.takeIf { it in saved } ?: saved.first()
         }
     }
 
@@ -51,25 +54,16 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     // Direct thread-safe active canvas stokes path tracker
     val activeStrokes = mutableStateListOf<DrawStroke>()
 
-    private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
-    private val listAdapter = moshi.adapter<List<DrawStroke>>(
-        com.squareup.moshi.Types.newParameterizedType(List::class.java, DrawStroke::class.java),
-    )
-
     // FlatMap room session history to real-time UI render models
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val roomMessages: StateFlow<List<UIMessage>> = _inviteCode
+    val roomMessages: StateFlow<List<UIMessage>> = _activeRoom
         .flatMapLatest { code ->
             if (code == null) {
                 flowOf(emptyList())
             } else {
                 repository.getMessagesForRoom(code).map { entityList ->
                     entityList.map { entity ->
-                        val strokes = try {
-                            listAdapter.fromJson(entity.strokesJson) ?: emptyList()
-                        } catch (_: Exception) {
-                            emptyList()
-                        }
+                        val strokes = decodeStrokes(entity.strokesJson)
                         UIMessage(
                             id = entity.id,
                             senderId = entity.senderId,
@@ -94,18 +88,51 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
 
     fun joinRoom(code: String) {
         val clean = code.trim()
-        if (clean.isNotEmpty()) {
-            _inviteCode.value = clean
-            session.lastInviteCode = clean
+        if (clean.isEmpty()) return
+        if (clean !in _joinedRooms.value) {
+            _joinedRooms.value = _joinedRooms.value + clean
+            session.joinedRooms = _joinedRooms.value
             repository.connectToRoom(clean)
         }
+        switchToRoom(clean)
     }
 
-    fun disconnect() {
-        _inviteCode.value = null
-        session.lastInviteCode = null
-        repository.disconnect()
+    fun switchToRoom(code: String) {
+        if (code !in _joinedRooms.value) return
+        if (_activeRoom.value == code) return
         activeStrokes.clear()
+        _currentMessageText.value = ""
+        _activeRoom.value = code
+        session.activeRoom = code
+    }
+
+    fun requestJoinNewRoom() {
+        // Hide the active board so the connection screen takes over; rooms stay joined.
+        _activeRoom.value = null
+        session.activeRoom = null
+        activeStrokes.clear()
+        _currentMessageText.value = ""
+    }
+
+    fun cancelJoinNewRoom() {
+        val rooms = _joinedRooms.value
+        if (rooms.isEmpty()) return
+        val target = rooms.first()
+        _activeRoom.value = target
+        session.activeRoom = target
+    }
+
+    fun leaveCurrentRoom() {
+        val code = _activeRoom.value ?: return
+        val remaining = _joinedRooms.value.filterNot { it == code }
+        _joinedRooms.value = remaining
+        session.joinedRooms = remaining
+        repository.disconnectFromRoom(code)
+        val next = remaining.firstOrNull()
+        _activeRoom.value = next
+        session.activeRoom = next
+        activeStrokes.clear()
+        _currentMessageText.value = ""
     }
 
     fun changeColor(colorArgb: Int) {
@@ -143,14 +170,15 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearRoomHistory() {
-        val code = _inviteCode.value ?: return
+        val code = _activeRoom.value ?: return
         viewModelScope.launch {
             repository.clearHistory(code)
         }
     }
 
     fun deleteMessage(id: String) {
-        repository.deleteMessage(id)
+        val code = _activeRoom.value ?: return
+        repository.deleteMessage(code, id)
     }
 
     fun setUserName(name: String) {
@@ -161,8 +189,9 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendCurrentDrawing() {
         if (activeStrokes.isEmpty()) return
+        val code = _activeRoom.value ?: return
         val currentSnap = activeStrokes.toList()
-        repository.sendDrawing(currentSnap, _userName.value, _currentMessageText.value.ifBlank { null })
+        repository.sendDrawing(code, currentSnap, _userName.value, _currentMessageText.value.ifBlank { null })
         activeStrokes.clear()
         _currentMessageText.value = ""
     }

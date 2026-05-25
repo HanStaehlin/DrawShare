@@ -1,14 +1,14 @@
 package com.example.data
 
-import com.squareup.moshi.JsonClass
+import kotlinx.serialization.Serializable
 
-@JsonClass(generateAdapter = true)
+@Serializable
 data class StrokePoint(
     val x: Float,
     val y: Float,
 )
 
-@JsonClass(generateAdapter = true)
+@Serializable
 data class DrawStroke(
     val points: List<StrokePoint>,
     val colorArgb: Int,

@@ -20,8 +20,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
@@ -83,7 +87,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun DrawShareApp(viewModel: DrawViewModel) {
-    val inviteCode by viewModel.inviteCode.collectAsStateWithLifecycle()
+    val activeRoom by viewModel.activeRoom.collectAsStateWithLifecycle()
+    val joinedRooms by viewModel.joinedRooms.collectAsStateWithLifecycle()
     val isInternetAvailable by viewModel.isInternetAvailable.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
 
@@ -148,15 +153,17 @@ fun DrawShareApp(viewModel: DrawViewModel) {
             Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(Color(0xFFF4F4F5)))
 
             // Screen Selection flow (Join screen or Active Session tabs)
-            if (inviteCode == null) {
+            if (activeRoom == null) {
                 ConnectionScreen(
-                    viewModel = viewModel
+                    viewModel = viewModel,
+                    showBack = joinedRooms.isNotEmpty(),
                 )
             } else {
                 ActiveBoardScreen(
                     viewModel = viewModel,
-                    inviteCode = inviteCode!!,
-                    connectionState = connectionState
+                    activeRoom = activeRoom!!,
+                    joinedRooms = joinedRooms,
+                    connectionState = connectionState,
                 )
             }
         }
@@ -165,7 +172,8 @@ fun DrawShareApp(viewModel: DrawViewModel) {
 
 @Composable
 fun ConnectionScreen(
-    viewModel: DrawViewModel
+    viewModel: DrawViewModel,
+    showBack: Boolean = false,
 ) {
     var codeInput by remember { mutableStateOf("") }
     val userName by viewModel.userName.collectAsStateWithLifecycle()
@@ -177,6 +185,30 @@ fun ConnectionScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        if (showBack) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .clickable { viewModel.cancelJoinNewRoom() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.Black,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(
+                    text = "BACK TO ROOMS",
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                )
+            }
+        }
         Text(
             text = "YOUR PROFILE",
             fontSize = 12.sp,
@@ -316,9 +348,11 @@ fun ConnectionScreen(
 @Composable
 fun ActiveBoardScreen(
     viewModel: DrawViewModel,
-    inviteCode: String,
-    connectionState: WebSocketConnectionState
+    activeRoom: String,
+    joinedRooms: List<String>,
+    connectionState: WebSocketConnectionState,
 ) {
+    val inviteCode = activeRoom
     // 3 Tabs matching the bottom navigation of design theme:
     // Tab 0 = History Log, Tab 1 = Active Drawing Canvas, Tab 2 = Group Room Info
     var activeTab by remember { mutableIntStateOf(1) }
@@ -381,15 +415,13 @@ fun ActiveBoardScreen(
                 }
             }
 
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "CODE: $inviteCode",
-                    fontSize = 14.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black
-                )
-            }
+            RoomSwitcherChip(
+                activeRoom = inviteCode,
+                joinedRooms = joinedRooms,
+                onSwitch = { viewModel.switchToRoom(it) },
+                onJoinNew = { viewModel.requestJoinNewRoom() },
+                onLeaveCurrent = { viewModel.leaveCurrentRoom() },
+            )
         }
 
         // Horizontal partition line
@@ -1020,9 +1052,9 @@ fun ActiveBoardScreen(
                             )
                         }
 
-                        // High contrast Danger Zone disconnect link
+                        // Per-room leave action; other joined rooms stay connected.
                         Button(
-                            onClick = { viewModel.disconnect() },
+                            onClick = { viewModel.leaveCurrentRoom() },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color.White,
                                 contentColor = Color.Black
@@ -1035,7 +1067,7 @@ fun ActiveBoardScreen(
                                 .testTag("leave_board_button")
                         ) {
                             Text(
-                                text = "DISCONNECT CURRENT SESSION",
+                                text = "LEAVE THIS ROOM",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
@@ -1371,6 +1403,126 @@ fun DrawingCanvas(
                     cap = StrokeCap.Round,
                     join = StrokeJoin.Round
                 )
+            )
+        }
+    }
+}
+
+@Composable
+fun RoomSwitcherChip(
+    activeRoom: String,
+    joinedRooms: List<String>,
+    onSwitch: (String) -> Unit,
+    onJoinNew: () -> Unit,
+    onLeaveCurrent: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFFF4F4F5))
+                .clickable { expanded = true }
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .testTag("room_switcher_chip"),
+        ) {
+            Text(
+                text = "CODE: $activeRoom",
+                fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+            )
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = "Switch room",
+                tint = Color.Black,
+                modifier = Modifier
+                    .padding(start = 2.dp)
+                    .size(18.dp),
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = Color.White,
+        ) {
+            joinedRooms.forEach { room ->
+                val isActive = room == activeRoom
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = room,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            color = Color.Black,
+                        )
+                    },
+                    leadingIcon = if (isActive) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    } else null,
+                    onClick = {
+                        expanded = false
+                        onSwitch(room)
+                    },
+                )
+            }
+            HorizontalDivider(color = Color(0xFFF4F4F5))
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "JOIN OR CREATE NEW ROOM",
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onJoinNew()
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "LEAVE THIS ROOM",
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFF6B6B),
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Clear,
+                        contentDescription = null,
+                        tint = Color(0xFFFF6B6B),
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onLeaveCurrent()
+                },
             )
         }
     }
