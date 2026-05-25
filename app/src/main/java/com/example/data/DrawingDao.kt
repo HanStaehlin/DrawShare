@@ -17,6 +17,9 @@ interface DrawingDao {
     @Query("DELETE FROM drawing_messages WHERE inviteCode = :inviteCode")
     suspend fun clearMessagesForRoom(inviteCode: String)
 
+    @Query("DELETE FROM drawing_messages WHERE id = :id")
+    suspend fun deleteMessage(id: String)
+
     @Query("SELECT * FROM drawing_messages WHERE isReceived = 1 ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestReceivedMessage(): DrawingMessage?
 }

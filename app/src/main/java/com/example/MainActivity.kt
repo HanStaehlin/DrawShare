@@ -462,7 +462,10 @@ fun ActiveBoardScreen(
                                 contentPadding = PaddingValues(bottom = 24.dp)
                             ) {
                                 items(roomMessages, key = { it.id }) { message ->
-                                    DrawingHistoryCard(message = message)
+                                    DrawingHistoryCard(
+                                        message = message,
+                                        onDelete = { viewModel.deleteMessage(message.id) },
+                                    )
                                 }
                             }
                         }
@@ -565,7 +568,7 @@ fun ActiveBoardScreen(
                                             )
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Clear, // Using Clear as Eraser proxy
+                                            imageVector = EraserIcon,
                                             contentDescription = "Eraser",
                                             tint = if (isEraserMode) Color.White else Color.Black,
                                             modifier = Modifier.size(20.dp)
@@ -1095,9 +1098,58 @@ fun ActiveBoardScreen(
 }
 
 @Composable
-fun DrawingHistoryCard(message: UIMessage) {
+fun DrawingHistoryCard(
+    message: UIMessage,
+    onDelete: () -> Unit = {},
+) {
     val formatter = remember { SimpleDateFormat("MMM d, h:mm:ss a", Locale.getDefault()) }
     val timeString = formatter.format(Date(message.timestamp))
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = {
+                Text(
+                    "DELETE DRAWING?",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    "This will remove the drawing for both you and your partner. This cannot be undone.",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                )
+            },
+            confirmButton = {
+                Text(
+                    text = "DELETE",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFF6B6B),
+                    modifier = Modifier
+                        .clickable {
+                            showDeleteDialog = false
+                            onDelete()
+                        }
+                        .padding(8.dp),
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "CANCEL",
+                    fontFamily = FontFamily.Monospace,
+                    color = Color.Black,
+                    modifier = Modifier
+                        .clickable { showDeleteDialog = false }
+                        .padding(8.dp),
+                )
+            },
+            containerColor = Color.White,
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -1177,13 +1229,32 @@ fun DrawingHistoryCard(message: UIMessage) {
             )
         }
 
-        Text(
-            text = timeString,
-            fontSize = 9.sp,
-            color = Color.LightGray,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = timeString,
+                fontSize = 9.sp,
+                color = Color.LightGray,
+                fontFamily = FontFamily.Monospace,
+            )
+
+            Text(
+                text = "DELETE",
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                textDecoration = TextDecoration.Underline,
+                color = Color(0xFFFF6B6B),
+                modifier = Modifier
+                    .clickable { showDeleteDialog = true }
+                    .padding(start = 8.dp),
+            )
+        }
 
         if (!message.text.isNullOrBlank()) {
             Box(

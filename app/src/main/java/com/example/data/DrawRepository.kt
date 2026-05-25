@@ -127,7 +127,14 @@ class DrawRepository(
                             DocumentChange.Type.MODIFIED -> {
                                 handleIncomingFirestoreMessage(dc.document.data)
                             }
-                            else -> {}
+                            DocumentChange.Type.REMOVED -> {
+                                val removedId = dc.document.id
+                                scope.launch {
+                                    drawingDao.deleteMessage(removedId)
+                                    LatestDrawingWidget().updateAll(context)
+                                }
+                                addLog("🗑️ Drawing removed by partner: $removedId")
+                            }
                         }
                     }
                 }
@@ -240,6 +247,22 @@ class DrawRepository(
 
     suspend fun clearHistory(inviteCode: String) {
         drawingDao.clearMessagesForRoom(inviteCode)
+    }
+
+    fun deleteMessage(messageId: String) {
+        val inviteCode = currentInviteCode ?: return
+        scope.launch {
+            drawingDao.deleteMessage(messageId)
+            LatestDrawingWidget().updateAll(context)
+        }
+        db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
+            .delete()
+            .addOnSuccessListener {
+                addLog("🗑️ Drawing deleted from cloud: $messageId")
+            }
+            .addOnFailureListener { e ->
+                addLog("❌ Cloud DELETE failure: ${e.message}")
+            }
     }
 }
 

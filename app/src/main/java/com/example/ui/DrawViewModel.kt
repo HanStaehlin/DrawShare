@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 class DrawViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application)
     private val repository = DrawRepository(application, db.drawingDao())
+    private val session = SessionStore(application)
 
     val isInternetAvailable: StateFlow<Boolean> = repository.isInternetAvailable
     val connectionState: StateFlow<WebSocketConnectionState> = repository.connectionState
@@ -21,8 +22,15 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     private val _inviteCode = MutableStateFlow<String?>(null)
     val inviteCode: StateFlow<String?> = _inviteCode
 
-    private val _userName = MutableStateFlow("User")
+    private val _userName = MutableStateFlow(session.userName ?: "User")
     val userName: StateFlow<String> = _userName
+
+    init {
+        session.lastInviteCode?.let { saved ->
+            _inviteCode.value = saved
+            repository.connectToRoom(saved)
+        }
+    }
 
     // Draw active properties state (Color, Opacity Slider, Stroke Width)
     private val _selectedColor = MutableStateFlow(0xFF000000.toInt()) // Pure Black
@@ -88,12 +96,14 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
         val clean = code.trim()
         if (clean.isNotEmpty()) {
             _inviteCode.value = clean
+            session.lastInviteCode = clean
             repository.connectToRoom(clean)
         }
     }
 
     fun disconnect() {
         _inviteCode.value = null
+        session.lastInviteCode = null
         repository.disconnect()
         activeStrokes.clear()
     }
@@ -139,8 +149,14 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteMessage(id: String) {
+        repository.deleteMessage(id)
+    }
+
     fun setUserName(name: String) {
-        _userName.value = name.take(20)
+        val trimmed = name.take(20)
+        _userName.value = trimmed
+        session.userName = trimmed
     }
 
     fun sendCurrentDrawing() {
