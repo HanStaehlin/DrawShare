@@ -77,7 +77,8 @@ class DrawRepository(
         try {
             val activeNetwork = connectivityManager.activeNetwork
             val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
-            _isInternetAvailable.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) != false
+            _isInternetAvailable.value =
+                caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) != false
         } catch (_: Exception) {
             _isInternetAvailable.value = true
         }
@@ -95,7 +96,7 @@ class DrawRepository(
                         _isInternetAvailable.value = false
                         addLog("Network reported lost")
                     }
-                }
+                },
             )
         } catch (e: Exception) {
             Log.e("DrawRepository", "Failed to register network callback", e)
@@ -109,9 +110,8 @@ class DrawRepository(
         roomConnectionStates[inviteCode] = WebSocketConnectionState.CONNECTING
         recomputeAggregateConnectionState()
 
-        val roomRef = db.collection("rooms").document(inviteCode).collection("messages")
-
-        snapshotListeners[inviteCode] = roomRef
+        snapshotListeners[inviteCode] = db.collection("rooms").document(inviteCode)
+            .collection("messages")
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshots, e ->
                 if (e != null) {
@@ -124,21 +124,16 @@ class DrawRepository(
                 roomConnectionStates[inviteCode] = WebSocketConnectionState.CONNECTED
                 recomputeAggregateConnectionState()
 
-                if (snapshots != null) {
-                    for (dc in snapshots.documentChanges) {
-                        when (dc.type) {
-                            DocumentChange.Type.ADDED,
-                            DocumentChange.Type.MODIFIED -> {
-                                handleIncomingFirestoreMessage(inviteCode, dc.document.data)
+                snapshots?.documentChanges?.forEach { dc ->
+                    when (dc.type) {
+                        DocumentChange.Type.ADDED,
+                        DocumentChange.Type.MODIFIED -> handleIncomingFirestoreMessage(inviteCode, dc.document.data)
+                        DocumentChange.Type.REMOVED -> {
+                            scope.launch {
+                                drawingDao.deleteMessage(dc.document.id)
+                                LatestDrawingWidget().updateAll(context)
                             }
-                            DocumentChange.Type.REMOVED -> {
-                                val removedId = dc.document.id
-                                scope.launch {
-                                    drawingDao.deleteMessage(removedId)
-                                    LatestDrawingWidget().updateAll(context)
-                                }
-                                addLog("🗑️ Drawing removed by partner ($inviteCode): $removedId")
-                            }
+                            addLog("🗑️ Drawing removed by partner ($inviteCode): ${dc.document.id}")
                         }
                     }
                 }
@@ -163,45 +158,38 @@ class DrawRepository(
     fun sendDrawing(inviteCode: String, strokes: List<DrawStroke>, senderName: String, text: String? = null) {
         if (!snapshotListeners.containsKey(inviteCode)) return
         val messageId = "msg_${UUID.randomUUID()}"
-
         val strokesJson = encodeStrokes(strokes)
-
-        val msg = DrawingMessage(
-            id = messageId,
-            inviteCode = inviteCode,
-            senderId = localDeviceId,
-            senderName = senderName,
-            strokesJson = strokesJson,
-            text = text,
-            timestamp = System.currentTimeMillis(),
-            isReceived = false,
-            isConfirmedDelivered = false,
-        )
+        val encryptedStrokes = CryptoUtils.encrypt(strokesJson, inviteCode)
+        val timestamp = System.currentTimeMillis()
 
         scope.launch {
-            drawingDao.insertMessage(msg)
+            drawingDao.insertMessage(
+                DrawingMessageDomain(
+                    id = messageId,
+                    inviteCode = inviteCode,
+                    senderId = localDeviceId,
+                    senderName = senderName,
+                    strokesJson = strokesJson,
+                    text = text,
+                    timestamp = timestamp,
+                    isReceived = false,
+                    isConfirmedDelivered = false,
+                )
+            )
         }
 
-        val encryptedStrokes = CryptoUtils.encrypt(strokesJson, inviteCode)
-
-        val data = hashMapOf(
-            "type" to "drawing",
-            "id" to messageId,
-            "sender" to localDeviceId,
-            "senderName" to senderName,
-            "strokesJson" to encryptedStrokes,
-            "text" to text,
-            "timestamp" to msg.timestamp
-        )
-
         db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
-            .set(data)
-            .addOnSuccessListener {
-                addLog("✅ Drawing message SAVED to cloud: $inviteCode")
-            }
-            .addOnFailureListener { e ->
-                addLog("❌ Cloud SEND failure: ${e.message}")
-            }
+            .set(hashMapOf(
+                "type" to "drawing",
+                "id" to messageId,
+                "sender" to localDeviceId,
+                "senderName" to senderName,
+                "strokesJson" to encryptedStrokes,
+                "text" to text,
+                "timestamp" to timestamp,
+            ))
+            .addOnSuccessListener { addLog("✅ Drawing message SAVED to cloud: $inviteCode") }
+            .addOnFailureListener { e -> addLog("❌ Cloud SEND failure: ${e.message}") }
     }
 
     private fun handleIncomingFirestoreMessage(inviteCode: String, data: Map<String, Any?>) {
@@ -210,43 +198,37 @@ class DrawRepository(
         val messageId = data["id"] as? String ?: return
 
         if (sender != localDeviceId) {
-            when (type) {
-                "drawing" -> {
-                    val senderName = data["senderName"] as? String ?: "Partner"
-                    val encryptedStrokes = data["strokesJson"] as? String ?: ""
-                    val text = data["text"] as? String
-                    val strokesJson = CryptoUtils.decrypt(encryptedStrokes, inviteCode)
-                    val timestamp = data["timestamp"] as? Long ?: System.currentTimeMillis()
+            if (type == "drawing") {
+                val senderName = data["senderName"] as? String ?: "Partner"
+                val encryptedStrokes = data["strokesJson"] as? String ?: ""
+                val text = data["text"] as? String
+                val strokesJson = CryptoUtils.decrypt(encryptedStrokes, inviteCode)
+                val timestamp = (data["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis()
 
-                    val incomingMsg = DrawingMessage(
-                        id = messageId,
-                        inviteCode = inviteCode,
-                        senderId = sender,
-                        senderName = senderName,
-                        strokesJson = strokesJson,
-                        text = text,
-                        timestamp = timestamp,
-                        isReceived = true,
-                        isConfirmedDelivered = true,
+                scope.launch {
+                    drawingDao.insertMessage(
+                        DrawingMessageDomain(
+                            id = messageId,
+                            inviteCode = inviteCode,
+                            senderId = sender,
+                            senderName = senderName,
+                            strokesJson = strokesJson,
+                            text = text,
+                            timestamp = timestamp,
+                            isReceived = true,
+                            isConfirmedDelivered = true,
+                        )
                     )
-
-                    scope.launch {
-                        drawingDao.insertMessage(incomingMsg)
-                        LatestDrawingWidget().updateAll(context)
-                    }
-
-                    // Acknowledge by updating the document in Firestore
-                    db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
-                        .update("deliveredTo", com.google.firebase.firestore.FieldValue.arrayUnion(localDeviceId))
+                    LatestDrawingWidget().updateAll(context)
                 }
+
+                db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
+                    .update("deliveredTo", com.google.firebase.firestore.FieldValue.arrayUnion(localDeviceId))
             }
         } else {
-            // Check for delivery confirmation on our own messages
             val deliveredTo = data["deliveredTo"] as? List<*>
             if (!deliveredTo.isNullOrEmpty()) {
-                scope.launch {
-                    drawingDao.confirmDelivery(messageId)
-                }
+                scope.launch { drawingDao.confirmDelivery(messageId) }
             }
         }
     }
@@ -264,12 +246,8 @@ class DrawRepository(
         }
         db.collection("rooms").document(inviteCode).collection("messages").document(messageId)
             .delete()
-            .addOnSuccessListener {
-                addLog("🗑️ Drawing deleted from cloud ($inviteCode): $messageId")
-            }
-            .addOnFailureListener { e ->
-                addLog("❌ Cloud DELETE failure: ${e.message}")
-            }
+            .addOnSuccessListener { addLog("🗑️ Drawing deleted from cloud ($inviteCode): $messageId") }
+            .addOnFailureListener { e -> addLog("❌ Cloud DELETE failure: ${e.message}") }
     }
 }
 

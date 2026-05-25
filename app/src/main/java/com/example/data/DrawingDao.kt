@@ -1,25 +1,72 @@
 package com.example.data
 
-import androidx.room.*
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
-@Dao
-interface DrawingDao {
-    @Query("SELECT * FROM drawing_messages WHERE inviteCode = :inviteCode ORDER BY timestamp DESC")
-    fun getMessagesForRoom(inviteCode: String): Flow<List<DrawingMessage>>
+// Domain model used by the rest of the app — keeps Boolean fields.
+data class DrawingMessageDomain(
+    val id: String,
+    val inviteCode: String,
+    val senderId: String,
+    val senderName: String,
+    val strokesJson: String,
+    val text: String?,
+    val timestamp: Long,
+    val isReceived: Boolean,
+    val isConfirmedDelivered: Boolean,
+)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertMessage(message: DrawingMessage)
+private fun DrawingMessage.toDomain() = DrawingMessageDomain(
+    id = id,
+    inviteCode = inviteCode,
+    senderId = senderId,
+    senderName = senderName,
+    strokesJson = strokesJson,
+    text = text,
+    timestamp = timestamp,
+    isReceived = isReceived != 0L,
+    isConfirmedDelivered = isConfirmedDelivered != 0L,
+)
 
-    @Query("UPDATE drawing_messages SET isConfirmedDelivered = 1 WHERE id = :id")
-    suspend fun confirmDelivery(id: String)
+class DrawingDao(db: DrawShareDb) {
+    private val queries = db.drawingMessageQueries
 
-    @Query("DELETE FROM drawing_messages WHERE inviteCode = :inviteCode")
-    suspend fun clearMessagesForRoom(inviteCode: String)
+    fun getMessagesForRoom(inviteCode: String): Flow<List<DrawingMessageDomain>> =
+        queries.getMessagesForRoom(inviteCode).asFlow()
+            .mapToList(Dispatchers.IO)
+            .map { list -> list.map { it.toDomain() } }
 
-    @Query("DELETE FROM drawing_messages WHERE id = :id")
-    suspend fun deleteMessage(id: String)
+    suspend fun insertMessage(message: DrawingMessageDomain) = withContext(Dispatchers.IO) {
+        queries.insertMessage(
+            id = message.id,
+            inviteCode = message.inviteCode,
+            senderId = message.senderId,
+            senderName = message.senderName,
+            strokesJson = message.strokesJson,
+            text = message.text,
+            timestamp = message.timestamp,
+            isReceived = if (message.isReceived) 1L else 0L,
+            isConfirmedDelivered = if (message.isConfirmedDelivered) 1L else 0L,
+        )
+    }
 
-    @Query("SELECT * FROM drawing_messages WHERE isReceived = 1 ORDER BY timestamp DESC LIMIT 1")
-    suspend fun getLatestReceivedMessage(): DrawingMessage?
+    suspend fun confirmDelivery(id: String) = withContext(Dispatchers.IO) {
+        queries.confirmDelivery(id)
+    }
+
+    suspend fun clearMessagesForRoom(inviteCode: String) = withContext(Dispatchers.IO) {
+        queries.clearMessagesForRoom(inviteCode)
+    }
+
+    suspend fun deleteMessage(id: String) = withContext(Dispatchers.IO) {
+        queries.deleteMessage(id)
+    }
+
+    suspend fun getLatestReceivedMessage(): DrawingMessageDomain? = withContext(Dispatchers.IO) {
+        queries.getLatestReceivedMessage().executeAsOneOrNull()?.toDomain()
+    }
 }

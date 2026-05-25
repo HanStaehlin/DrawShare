@@ -6,7 +6,16 @@ plugins {
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
+  alias(libs.plugins.sqldelight)
   id("com.google.gms.google-services")
+}
+
+sqldelight {
+  databases {
+    create("DrawShareDb") {
+      packageName.set("com.example.data")
+    }
+  }
 }
 
 kotlin {
@@ -33,12 +42,14 @@ kotlin {
     commonMain.dependencies {
       implementation(libs.kotlinx.serialization.json)
       implementation(libs.kotlinx.coroutines.core)
+      implementation(libs.sqldelight.coroutines.extensions)
     }
 
     androidMain {
       // All existing Android sources stay in place during migration.
       kotlin.srcDirs("src/main/java")
       dependencies {
+        implementation(libs.sqldelight.android.driver)
         implementation(libs.firebase.firestore)
         implementation(libs.androidx.activity.compose)
         implementation(libs.androidx.compose.material.icons.core)
@@ -51,10 +62,12 @@ kotlin {
         implementation(libs.androidx.lifecycle.runtime.ktx)
         implementation(libs.androidx.lifecycle.viewmodel.compose)
         implementation(libs.androidx.glance.appwidget)
-        implementation(libs.androidx.room.ktx)
-        implementation(libs.androidx.room.runtime)
         implementation(libs.kotlinx.coroutines.android)
       }
+    }
+
+    iosMain.dependencies {
+      implementation(libs.sqldelight.native.driver)
     }
 
     getByName("androidUnitTest") {

@@ -1,0 +1,33 @@
+CREATE TABLE DrawingMessage (
+  id TEXT NOT NULL PRIMARY KEY,
+  inviteCode TEXT NOT NULL,
+  senderId TEXT NOT NULL,
+  senderName TEXT NOT NULL DEFAULT 'Partner',
+  strokesJson TEXT NOT NULL,
+  text TEXT,
+  timestamp INTEGER NOT NULL,
+  isReceived INTEGER NOT NULL,
+  isConfirmedDelivered INTEGER NOT NULL
+);
+
+CREATE INDEX DrawingMessage_byRoom ON DrawingMessage(inviteCode, timestamp);
+
+getMessagesForRoom:
+SELECT * FROM DrawingMessage WHERE inviteCode = ? ORDER BY timestamp DESC;
+
+getLatestReceivedMessage:
+SELECT * FROM DrawingMessage WHERE isReceived = 1 ORDER BY timestamp DESC LIMIT 1;
+
+insertMessage:
+INSERT OR REPLACE INTO DrawingMessage(
+  id, inviteCode, senderId, senderName, strokesJson, text, timestamp, isReceived, isConfirmedDelivered
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+confirmDelivery:
+UPDATE DrawingMessage SET isConfirmedDelivered = 1 WHERE id = ?;
+
+clearMessagesForRoom:
+DELETE FROM DrawingMessage WHERE inviteCode = ?;
+
+deleteMessage:
+DELETE FROM DrawingMessage WHERE id = ?;

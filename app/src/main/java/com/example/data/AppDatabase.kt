@@ -1,29 +1,26 @@
 package com.example.data
 
 import android.content.Context
-import androidx.room.Database
-import androidx.room.Room
-import androidx.room.RoomDatabase
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 
-@Database(entities = [DrawingMessage::class], version = 3, exportSchema = false)
-abstract class AppDatabase : RoomDatabase() {
-    abstract fun drawingDao(): DrawingDao
+class AppDatabase private constructor(sqlDb: DrawShareDb) {
+    private val dao = DrawingDao(sqlDb)
+
+    fun drawingDao(): DrawingDao = dao
 
     companion object {
-        @Volatile
-        private var INSTANCE: AppDatabase? = null
+        @Volatile private var INSTANCE: AppDatabase? = null
 
-        fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "drawing_sharing_db",
+        fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
+            INSTANCE ?: run {
+                val driver = AndroidSqliteDriver(
+                    schema = DrawShareDb.Schema,
+                    context = context.applicationContext,
+                    name = "drawshare.db",
                 )
-                    .fallbackToDestructiveMigration()
-                    .build()
-                INSTANCE = instance
-                instance
+                // No column adapters needed — Boolean columns stored as INTEGER 0/1
+                // and converted at the DAO boundary.
+                AppDatabase(DrawShareDb(driver)).also { INSTANCE = it }
             }
         }
     }
