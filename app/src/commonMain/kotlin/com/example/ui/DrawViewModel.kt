@@ -1,17 +1,16 @@
 package com.example.ui
 
-import android.app.Application
 import androidx.compose.runtime.mutableStateListOf
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-class DrawViewModel(application: Application) : AndroidViewModel(application) {
-    private val db = AppDatabase.getDatabase(application)
-    private val repository = DrawRepository(application, db.drawingDao())
-    private val session = SessionStore(application)
+class DrawViewModel(
+    private val session: SessionStore,
+    private val repository: DrawRepositoryInterface,
+) : ViewModel() {
 
     val isInternetAvailable: StateFlow<Boolean> = repository.isInternetAvailable
     val connectionState: StateFlow<WebSocketConnectionState> = repository.connectionState
@@ -35,46 +34,39 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Draw active properties state (Color, Opacity Slider, Stroke Width)
-    private val _selectedColor = MutableStateFlow(0xFF000000.toInt()) // Pure Black
+    private val _selectedColor = MutableStateFlow(0xFF000000.toInt())
     val selectedColor: StateFlow<Int> = _selectedColor
 
-    private val _selectedAlpha = MutableStateFlow(1.0f) // Fully opaque default
+    private val _selectedAlpha = MutableStateFlow(1.0f)
     val selectedAlpha: StateFlow<Float> = _selectedAlpha
 
-    private val _selectedWidth = MutableStateFlow(8.0f) // Default Brush size
+    private val _selectedWidth = MutableStateFlow(8.0f)
     val selectedWidth: StateFlow<Float> = _selectedWidth
 
-    private val _isEraserMode = MutableStateFlow(value = false)
+    private val _isEraserMode = MutableStateFlow(false)
     val isEraserMode: StateFlow<Boolean> = _isEraserMode
 
     private val _currentMessageText = MutableStateFlow("")
     val currentMessageText: StateFlow<String> = _currentMessageText
 
-    // Direct thread-safe active canvas stokes path tracker
     val activeStrokes = mutableStateListOf<DrawStroke>()
 
-    // FlatMap room session history to real-time UI render models
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val roomMessages: StateFlow<List<UIMessage>> = _activeRoom
         .flatMapLatest { code ->
-            if (code == null) {
-                flowOf(emptyList())
-            } else {
-                repository.getMessagesForRoom(code).map { entityList ->
-                    entityList.map { entity ->
-                        val strokes = decodeStrokes(entity.strokesJson)
-                        UIMessage(
-                            id = entity.id,
-                            senderId = entity.senderId,
-                            senderName = entity.senderName,
-                            isReceived = entity.isReceived,
-                            isConfirmedDelivered = entity.isConfirmedDelivered,
-                            timestamp = entity.timestamp,
-                            text = entity.text,
-                            strokes = strokes,
-                        )
-                    }
+            if (code == null) flowOf(emptyList())
+            else repository.getMessagesForRoom(code).map { entityList ->
+                entityList.map { entity ->
+                    UIMessage(
+                        id = entity.id,
+                        senderId = entity.senderId,
+                        senderName = entity.senderName,
+                        isReceived = entity.isReceived,
+                        isConfirmedDelivered = entity.isConfirmedDelivered,
+                        timestamp = entity.timestamp,
+                        text = entity.text,
+                        strokes = decodeStrokes(entity.strokesJson),
+                    )
                 }
             }
         }
@@ -107,7 +99,6 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun requestJoinNewRoom() {
-        // Hide the active board so the connection screen takes over; rooms stay joined.
         _activeRoom.value = null
         session.activeRoom = null
         activeStrokes.clear()
@@ -117,9 +108,8 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelJoinNewRoom() {
         val rooms = _joinedRooms.value
         if (rooms.isEmpty()) return
-        val target = rooms.first()
-        _activeRoom.value = target
-        session.activeRoom = target
+        _activeRoom.value = rooms.first()
+        session.activeRoom = rooms.first()
     }
 
     fun leaveCurrentRoom() {
@@ -135,45 +125,18 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
         _currentMessageText.value = ""
     }
 
-    fun changeColor(colorArgb: Int) {
-        _selectedColor.value = colorArgb
-    }
-
-    fun changeAlpha(alpha: Float) {
-        _selectedAlpha.value = alpha
-    }
-
-    fun changeWidth(width: Float) {
-        _selectedWidth.value = width
-    }
-
-    fun toggleEraser(enabled: Boolean) {
-        _isEraserMode.value = enabled
-    }
-
-    fun setMessageText(text: String) {
-        _currentMessageText.value = text
-    }
-
-    fun addStroke(stroke: DrawStroke) {
-        activeStrokes.add(stroke)
-    }
-
-    fun undoLastStroke() {
-        if (activeStrokes.isNotEmpty()) {
-            activeStrokes.removeAt(activeStrokes.lastIndex)
-        }
-    }
-
-    fun clearCanvas() {
-        activeStrokes.clear()
-    }
+    fun changeColor(colorArgb: Int) { _selectedColor.value = colorArgb }
+    fun changeAlpha(alpha: Float) { _selectedAlpha.value = alpha }
+    fun changeWidth(width: Float) { _selectedWidth.value = width }
+    fun toggleEraser(enabled: Boolean) { _isEraserMode.value = enabled }
+    fun setMessageText(text: String) { _currentMessageText.value = text }
+    fun addStroke(stroke: DrawStroke) { activeStrokes.add(stroke) }
+    fun undoLastStroke() { if (activeStrokes.isNotEmpty()) activeStrokes.removeAt(activeStrokes.lastIndex) }
+    fun clearCanvas() { activeStrokes.clear() }
 
     fun clearRoomHistory() {
         val code = _activeRoom.value ?: return
-        viewModelScope.launch {
-            repository.clearHistory(code)
-        }
+        viewModelScope.launch { repository.clearHistory(code) }
     }
 
     fun deleteMessage(id: String) {
@@ -190,10 +153,9 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     fun sendCurrentDrawing() {
         if (activeStrokes.isEmpty()) return
         val code = _activeRoom.value ?: return
-        val currentSnap = activeStrokes.toList()
-        repository.sendDrawing(code, currentSnap, _userName.value, _currentMessageText.value.ifBlank { null })
+        val snap = activeStrokes.toList()
+        repository.sendDrawing(code, snap, _userName.value, _currentMessageText.value.ifBlank { null })
         activeStrokes.clear()
         _currentMessageText.value = ""
     }
 }
-

@@ -1,6 +1,7 @@
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.multiplatform)
+  alias(libs.plugins.compose.multiplatform)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.google.devtools.ksp)
@@ -43,7 +44,13 @@ kotlin {
     commonMain.dependencies {
       implementation(libs.kotlinx.serialization.json)
       implementation(libs.kotlinx.coroutines.core)
+      implementation(libs.kotlinx.datetime)
       implementation(libs.sqldelight.coroutines.extensions)
+      implementation(compose.runtime)
+      implementation(compose.foundation)
+      implementation(compose.material3)
+      implementation(compose.ui)
+      implementation(libs.androidx.lifecycle.viewmodel.compose)
     }
 
     androidMain {

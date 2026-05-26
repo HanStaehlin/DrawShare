@@ -25,7 +25,7 @@ import java.util.UUID
 class DrawRepository(
     private val context: Context,
     private val drawingDao: DrawingDao,
-) {
+) : DrawRepositoryInterface {
     private val db = FirebaseFirestore.getInstance()
     private val snapshotListeners = mutableMapOf<String, ListenerRegistration>()
     private val roomConnectionStates = mutableMapOf<String, WebSocketConnectionState>()
@@ -34,13 +34,13 @@ class DrawRepository(
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     private val _isInternetAvailable = MutableStateFlow(value = true)
-    val isInternetAvailable: StateFlow<Boolean> = _isInternetAvailable
+    override val isInternetAvailable: StateFlow<Boolean> = _isInternetAvailable
 
     private val _connectionState = MutableStateFlow(WebSocketConnectionState.DISCONNECTED)
-    val connectionState: StateFlow<WebSocketConnectionState> = _connectionState
+    override val connectionState: StateFlow<WebSocketConnectionState> = _connectionState
 
     private val _debugLog = MutableStateFlow<List<String>>(emptyList())
-    val debugLog: StateFlow<List<String>> = _debugLog
+    override val debugLog: StateFlow<List<String>> = _debugLog
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
@@ -103,7 +103,7 @@ class DrawRepository(
         }
     }
 
-    fun connectToRoom(inviteCode: String) {
+    override fun connectToRoom(inviteCode: String) {
         if (snapshotListeners.containsKey(inviteCode)) return
 
         addLog("Connecting to Firestore room: $inviteCode")
@@ -140,7 +140,7 @@ class DrawRepository(
             }
     }
 
-    fun disconnectFromRoom(inviteCode: String) {
+    override fun disconnectFromRoom(inviteCode: String) {
         snapshotListeners.remove(inviteCode)?.remove()
         roomConnectionStates.remove(inviteCode)
         recomputeAggregateConnectionState()
@@ -155,7 +155,7 @@ class DrawRepository(
         addLog("Disconnected from all rooms")
     }
 
-    fun sendDrawing(inviteCode: String, strokes: List<DrawStroke>, senderName: String, text: String? = null) {
+    override fun sendDrawing(inviteCode: String, strokes: List<DrawStroke>, senderName: String, text: String?) {
         if (!snapshotListeners.containsKey(inviteCode)) return
         val messageId = "msg_${UUID.randomUUID()}"
         val strokesJson = encodeStrokes(strokes)
@@ -233,13 +233,13 @@ class DrawRepository(
         }
     }
 
-    fun getMessagesForRoom(inviteCode: String) = drawingDao.getMessagesForRoom(inviteCode)
+    override fun getMessagesForRoom(inviteCode: String) = drawingDao.getMessagesForRoom(inviteCode)
 
-    suspend fun clearHistory(inviteCode: String) {
+    override suspend fun clearHistory(inviteCode: String) {
         drawingDao.clearMessagesForRoom(inviteCode)
     }
 
-    fun deleteMessage(inviteCode: String, messageId: String) {
+    override fun deleteMessage(inviteCode: String, messageId: String) {
         scope.launch {
             drawingDao.deleteMessage(messageId)
             LatestDrawingWidget().updateAll(context)
