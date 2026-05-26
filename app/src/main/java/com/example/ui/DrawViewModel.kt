@@ -197,13 +197,3 @@ class DrawViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
-data class UIMessage(
-    val id: String,
-    val senderId: String,
-    val senderName: String,
-    val isReceived: Boolean,
-    val isConfirmedDelivered: Boolean,
-    val timestamp: Long,
-    val text: String? = null,
-    val strokes: List<DrawStroke>,
-)

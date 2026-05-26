@@ -250,9 +250,3 @@ class DrawRepository(
             .addOnFailureListener { e -> addLog("❌ Cloud DELETE failure: ${e.message}") }
     }
 }
-
-enum class WebSocketConnectionState {
-    DISCONNECTED,
-    CONNECTING,
-    CONNECTED
-}

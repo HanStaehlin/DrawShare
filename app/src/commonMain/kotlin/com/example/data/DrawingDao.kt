@@ -7,19 +7,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-// Domain model used by the rest of the app — keeps Boolean fields.
-data class DrawingMessageDomain(
-    val id: String,
-    val inviteCode: String,
-    val senderId: String,
-    val senderName: String,
-    val strokesJson: String,
-    val text: String?,
-    val timestamp: Long,
-    val isReceived: Boolean,
-    val isConfirmedDelivered: Boolean,
-)
-
 private fun DrawingMessage.toDomain() = DrawingMessageDomain(
     id = id,
     inviteCode = inviteCode,

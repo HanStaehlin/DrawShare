@@ -7,14 +7,12 @@ import javax.crypto.spec.SecretKeySpec
 import java.security.MessageDigest
 import java.security.SecureRandom
 
-object CryptoUtils {
+internal actual object CryptoUtils {
     private const val ALGORITHM = "AES/CBC/PKCS5Padding"
     private const val IV_SIZE = 16
     private const val V2_PREFIX = "v2:"
 
-    // Legacy fixed IV. Kept only for decrypting messages written before per-message IVs.
     private val LEGACY_IV = "1234567890123456".toByteArray()
-
     private val secureRandom = SecureRandom()
 
     private fun generateKey(seed: String): SecretKeySpec {
@@ -23,7 +21,7 @@ object CryptoUtils {
         return SecretKeySpec(hash.copyOfRange(0, 16), "AES")
     }
 
-    fun encrypt(data: String, seed: String): String {
+    actual fun encrypt(data: String, seed: String): String {
         val key = generateKey(seed)
         val iv = ByteArray(IV_SIZE).also { secureRandom.nextBytes(it) }
         val cipher = Cipher.getInstance(ALGORITHM)
@@ -36,11 +34,10 @@ object CryptoUtils {
         return V2_PREFIX + Base64.encodeToString(payload, Base64.NO_WRAP)
     }
 
-    fun decrypt(encryptedData: String, seed: String): String {
+    actual fun decrypt(encryptedData: String, seed: String): String {
         return try {
             val key = generateKey(seed)
             val cipher = Cipher.getInstance(ALGORITHM)
-
             if (encryptedData.startsWith(V2_PREFIX)) {
                 val payload = Base64.decode(encryptedData.substring(V2_PREFIX.length), Base64.NO_WRAP)
                 if (payload.size < IV_SIZE) return "[]"
